@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Search, Check, Loader2, Plus, Minus } from 'lucide-react'
+import axios from 'axios';
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,9 +21,14 @@ import {
   CardContent,
 } from '@/components/ui/card'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { searchGuests, rooms } from '@/lib/mock-data'
 import type { Guest } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
+
+interface Room {
+  id: string;
+  number: string;
+  [key: string]: any;
+}
 
 interface GuestRegistrationFormProps {
   onClose?: () => void
@@ -36,6 +42,68 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  
+  // Add state for rooms
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false)
+
+  // Fetch rooms on component mount or when property changes
+  useEffect(() => {
+    const fetchRooms = async () => {
+      if (!currentProperty?.id) {
+        setRooms([]);
+        return;
+      }
+      
+      setIsLoadingRooms(true);
+      try {
+        const response = await axios.get('/api/rooms', { 
+          params: { propertyId: currentProperty.id } 
+        });
+        
+        // Ensure response.data is an array
+        const roomsData = response.data;
+        if (Array.isArray(roomsData)) {
+          setRooms(roomsData);
+        } else if (roomsData && typeof roomsData === 'object') {
+          // If it's an object with a data property
+          if (Array.isArray(roomsData.data)) {
+            setRooms(roomsData.data);
+          } else {
+            console.warn('API returned unexpected format:', roomsData);
+            setRooms([]);
+          }
+        } else {
+          console.warn('API returned non-array data:', roomsData);
+          setRooms([]);
+        }
+      } catch (error) {
+        console.error('Error fetching rooms:', error);
+        setRooms([]);
+      } finally {
+        setIsLoadingRooms(false);
+      }
+    };
+
+    fetchRooms();
+  }, [currentProperty]);
+
+  // Fuzzy search with debounce
+  useEffect(() => {
+    if (searchQuery.length < 2) {
+      setSearchResults([])
+      return
+    }
+
+    const fetch = async () => {
+      setIsSearching(true)
+      const results = await searchGuests(searchQuery)
+      setSearchResults(results)
+      setIsSearching(false)
+    }
+
+    fetch()
+  }, [searchQuery])
   
   // Form state matching the physical registration form
   const [formData, setFormData] = useState({
@@ -91,27 +159,19 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
     signatureDate: '',
   })
 
-  // Available rooms for the property
-  const availableRooms = rooms.filter(
-    r => (!currentProperty || r.propertyId === currentProperty.id) && r.status === 'available'
-  )
-
-  // Fuzzy search with debounce
-  useEffect(() => {
-    if (searchQuery.length < 2) {
-      setSearchResults([])
-      return
+  const searchGuests = async (query: string) => {
+    try {
+      const response = await axios.get('/api/guests', { params: { query } })
+      return response.data
+    } catch (error) {
+      console.error(error)
+      return []
     }
+  }
 
-    setIsSearching(true)
-    const timer = setTimeout(() => {
-      const results = searchGuests(searchQuery)
-      setSearchResults(results)
-      setIsSearching(false)
-    }, 300)
-
-    return () => clearTimeout(timer)
-  }, [searchQuery])
+  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value)
+  }
 
   // Pre-populate form when guest is selected
   const handleSelectGuest = (guest: Guest) => {
@@ -200,8 +260,89 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
 
   const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Transform form data to match Guest type expected by API
+    const guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt' | 'loyaltyPoints' | 'totalStays' | 'totalSpent'> & { id?: string } = {
+      // Include existing guest ID if updating
+      ...(selectedGuest && { id: selectedGuest.id }),
+      
+      // Primary Guest Info
+      title: formData.title,
+      surname: formData.surname,
+      firstName: formData.firstName,
+      nationality: formData.nationality,
+      idPassportNumber: formData.idPassportNumber,
+      
+      // Party Info
+      numberOfAdults: formData.numberOfAdults,
+      numberOfChildren: formData.numberOfChildren,
+      childrenAges: formData.childrenAges.filter(age => age !== '').map(Number),
+      
+      // Other Adult (only include if there's data)
+      otherAdult: formData.otherAdultSurname || formData.otherAdultFirstName ? {
+        surname: formData.otherAdultSurname,
+        firstName: formData.otherAdultFirstName,
+        nationality: formData.otherAdultNationality,
+        idPassportNumber: formData.otherAdultIdPassport,
+      } : undefined,
+      
+      // Address Info
+      postalAddress: formData.postalAddress,
+      residentialAddress: formData.residentialAddress,
+      city: formData.city,
+      stateProvince: formData.stateProvince,
+      country: formData.country,
+      
+      // Contact Info
+      telHome: formData.telHome,
+      telBusiness: formData.telBusiness,
+      cellphone: formData.cellphone,
+      email: formData.email,
+      
+      // Stay Info
+      dateIn: new Date(formData.dateIn),
+      dateOut: new Date(formData.dateOut),
+      roomNumber: formData.roomNumber,
+      accountPayableBy: formData.accountPayableBy,
+      vehicleRegNo: formData.vehicleRegNo,
+      breakfastTime: formData.breakfastTime,
+      
+      // Food Preferences - transform from yes/no checkboxes to booleans
+      preferences: {
+        beef: formData.beefYes,
+        pork: formData.porkYes,
+        eggStyle: formData.eggStyle || null,
+        dietaryRestrictions: [],
+        specialRequests: [],
+        // Legacy fields for room preferences
+        roomType: '',
+        floorPreference: 'high', // Default to High
+        bedType: 'king',
+      },
+      serveDinner: formData.serveDinner,
+      
+      // Agreement
+      agreedToTerms: formData.agreedToTerms,
+      signatureDate: new Date(formData.signatureDate),
+      
+      // System Fields - defaults for new guests, preserve for existing
+      loyaltyTier: selectedGuest?.loyaltyTier || 'bronze',
+      notes: selectedGuest?.notes,
+      tags: selectedGuest?.tags || [],
+    }
+    
+    console.log('[v0] Guest data being sent to API:', JSON.stringify(guestData, null, 2))
+    
+    // Make API call
+    try {
+      await axios.post('/api/guests', guestData)
+      // Handle successful API call
+      console.log('[v0] Guest saved successfully')
+    } catch (error) {
+      // Handle API error
+      console.error('[v0] Error saving guest:', error)
+    }
+    
     setIsSaving(false)
     onClose?.()
   }
@@ -650,16 +791,26 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="roomNumber">Room No. *</Label>
-            <Select value={formData.roomNumber} onValueChange={(v) => updateForm('roomNumber', v)}>
+            <Select 
+              value={formData.roomNumber} 
+              onValueChange={(v) => updateForm('roomNumber', v)}
+              disabled={isLoadingRooms}
+            >
               <SelectTrigger id="roomNumber">
-                <SelectValue placeholder="Select Room" />
+                <SelectValue placeholder={isLoadingRooms ? "Loading rooms..." : "Select Room"} />
               </SelectTrigger>
               <SelectContent>
-                {availableRooms.map((room) => (
-                  <SelectItem key={room.id} value={room.number}>
-                    {room.number} - {room.type} (${room.baseRate}/night)
+                {Array.isArray(rooms) && rooms.length > 0 ? (
+                  rooms.map((room: Room) => (
+                    <SelectItem key={room.id} value={room.number}>
+                      {room.number}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>
+                    {isLoadingRooms ? "Loading..." : "No rooms available"}
                   </SelectItem>
-                ))}
+                )}
               </SelectContent>
             </Select>
           </div>

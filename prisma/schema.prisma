@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomType {
+  standard
+  deluxe
+  suite
+  executive
+  penthouse
+}
+
+enum RoomStatus {
+  available
+  occupied
+  maintenance
+  cleaning
+  reserved
+}
+
+enum BookingStatus {
+  confirmed
+  checked_in
+  checked_out
+  cancelled
+  no_show
+}
+
+enum BookingSource {
+  direct
+  booking_com
+  expedia
+  airbnb
+  phone
+  walk_in
+}
+
+enum UserRole {
+  admin
+  manager
+  front_desk
+  housekeeping
+  maintenance
+}
+
+enum LoyaltyTier {
+  bronze
+  silver
+  gold
+  platinum
+}
+
+model Property {
+  id         String   @id
+  name       String
+  code       String   @unique
+  address    String
+  city       String
+  country    String
+  phone      String
+  email      String
+  timezone   String
+  currency   String
+  totalRooms Int
+  createdAt  DateTime
+
+  rooms      Room[]
+  bookings   Booking[]
+  access     UserProperty[]
+
+  @@index([city])
+  @@index([country])
+}
+
+model Guest {
+  id               String      @id
+  title            String
+  surname          String
+  firstName        String
+  nationality      String
+  idPassportNumber String
+
+  numberOfAdults   Int
+  numberOfChildren Int
+  childrenAges     Json
+  otherAdult       Json?
+
+  postalAddress    String
+  residentialAddress String
+  city             String
+  stateProvince    String
+  country          String
+
+  telHome          String
+  telBusiness      String
+  cellphone        String
+  email            String
+
+  dateIn           DateTime
+  dateOut          DateTime
+  roomNumber       String
+  accountPayableBy String
+  vehicleRegNo     String
+  breakfastTime    String
+
+  preferences      Json
+  serveDinner      Boolean
+
+  agreedToTerms    Boolean
+  signatureDate    DateTime
+
+  loyaltyTier      LoyaltyTier
+  loyaltyPoints    Int
+  totalStays       Int
+  totalSpent       Int
+  notes            String?
+  tags             Json
+
+  createdAt        DateTime
+  updatedAt        DateTime
+
+  bookings         Booking[]
+
+  @@index([surname])
+  @@index([firstName])
+  @@index([email])
+  @@index([cellphone])
+  @@index([idPassportNumber])
+}
+
+model Room {
+  id           String     @id
+  propertyId   String
+  number       String
+  floor        Int
+  type         RoomType
+  status       RoomStatus
+  maxOccupancy Int
+  baseRate     Float
+  amenities    Json
+  lastCleaned  DateTime?
+  notes        String?
+
+  property     Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+
+  @@unique([propertyId, number])
+  @@index([propertyId, status])
+  @@index([propertyId, type])
+}
+
+model Booking {
+  id              String        @id
+  propertyId      String
+  guestId         String
+  roomId          String
+  checkIn         DateTime
+  checkOut        DateTime
+  status          BookingStatus
+  adults          Int
+  children        Int
+  source          BookingSource
+  totalAmount     Float
+  paidAmount      Float
+  specialRequests String?
+  createdAt       DateTime
+  updatedAt       DateTime
+
+  property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  guest           Guest         @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  room            Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, status])
+  @@index([roomId, checkIn, checkOut])
+  @@index([guestId])
+}
+
+model User {
+  id        String   @id
+  email     String   @unique
+  name      String
+  role      UserRole
+  avatar    String?
+  lastLogin DateTime?
+  isActive  Boolean
+
+  access    UserProperty[]
+}
+
+model UserProperty {
+  userId     String
+  propertyId String
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, propertyId])
+  @@index([propertyId])
+}

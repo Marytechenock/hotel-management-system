@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Search,
   Plus,
@@ -55,9 +55,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { guests, searchGuests } from '@/lib/mock-data'
 import type { Guest } from '@/lib/types'
 import { GuestRegistrationForm } from '@/components/guest-registration-form'
+import { format } from 'date-fns'
 
 const ITEMS_PER_PAGE = 10
 
@@ -75,16 +75,83 @@ export default function GuestsPage() {
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isNewGuestOpen, setIsNewGuestOpen] = useState(false)
+  const [guests, setGuests] = useState<Guest[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch guests on component mount
+ // Fetch guests on component mount
+  useEffect(() => {
+    const fetchGuests = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch('/api/guests')
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        
+        // Ensure data is an array
+        if (Array.isArray(data.data)) {
+          setGuests(data.data)
+        } else {
+          console.error('API did not return an array:', data)
+          setGuests([])
+        }
+      } catch (error) {
+        console.error('Error fetching guests:', error)
+        setGuests([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchGuests()
+  }, [])
+
+  // Debug: Log guests state to see what's happening
+  useEffect(() => {
+    console.log('Guests state:', guests, 'Type:', typeof guests, 'Is array?', Array.isArray(guests))
+  }, [guests])
 
   const filteredGuests = useMemo(() => {
-    let result = searchQuery ? searchGuests(searchQuery) : guests
+    // Ensure guests is an array before proceeding
+    if (!Array.isArray(guests)) {
+      console.error('guests is not an array:', guests)
+      return []
+    }
     
+    let result = [...guests]
+    
+    // Apply search filter
+    if (searchQuery) {
+      result = result.filter(g => {
+        // Check if g has the expected properties
+        if (!g || typeof g !== 'object') return false
+        
+        const name = g.firstName || ''
+        const email = g.email || ''
+        const phone = g.cellphone || ''
+        
+        return (
+          name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          phone.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      })
+    }
+    
+    // Apply loyalty tier filter
     if (loyaltyFilter !== 'all') {
-      result = result.filter(g => g.loyaltyTier === loyaltyFilter)
+      result = result.filter(g => {
+        if (!g || typeof g !== 'object') return false
+        return g.loyaltyTier === loyaltyFilter
+      })
     }
     
     return result
-  }, [searchQuery, loyaltyFilter])
+  }, [searchQuery, loyaltyFilter, guests])
 
   const totalPages = Math.ceil(filteredGuests.length / ITEMS_PER_PAGE)
   const paginatedGuests = filteredGuests.slice(
@@ -92,16 +159,37 @@ export default function GuestsPage() {
     currentPage * ITEMS_PER_PAGE
   )
 
-  const stats = useMemo(() => ({
-    total: guests.length,
-    platinum: guests.filter(g => g.loyaltyTier === 'platinum').length,
-    gold: guests.filter(g => g.loyaltyTier === 'gold').length,
-    newThisMonth: guests.filter(g => {
-      const monthAgo = new Date()
-      monthAgo.setMonth(monthAgo.getMonth() - 1)
-      return new Date(g.createdAt) > monthAgo
-    }).length,
-  }), [])
+  const stats = useMemo(() => {
+    // Ensure guests is an array before proceeding
+    if (!Array.isArray(guests)) {
+      return {
+        total: 0,
+        platinum: 0,
+        gold: 0,
+        newThisMonth: 0,
+      }
+    }
+    
+    const now = new Date()
+    const monthAgo = new Date()
+    monthAgo.setMonth(monthAgo.getMonth() - 1)
+    
+    return {
+      total: guests.length,
+      platinum: guests.filter(g => g?.loyaltyTier === 'platinum').length,
+      gold: guests.filter(g => g?.loyaltyTier === 'gold').length,
+      newThisMonth: guests.filter(g => {
+        if (!g || !g.createdAt) return false
+        try {
+          const createdAt = new Date(g.createdAt)
+          return createdAt > monthAgo && createdAt <= now
+        } catch (e) {
+          console.error('Error parsing date:', g.createdAt, e)
+          return false
+        }
+      }).length,
+    }
+  }, [guests])
 
   return (
     <div className="p-6">
@@ -245,7 +333,7 @@ export default function GuestsPage() {
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Room {guest.roomNumber}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(guest.dateIn).toLocaleDateString()} - {new Date(guest.dateOut).toLocaleDateString()}
+                      {format(new Date(guest.dateIn), 'yyyy-MM-dd')} - {format(new Date(guest.dateOut), 'yyyy-MM-dd')}
                     </p>
                   </div>
                 </TableCell>

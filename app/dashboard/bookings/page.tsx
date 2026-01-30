@@ -106,7 +106,7 @@ export default function BookingsPage() {
         const guest = getGuestById(b.guestId)
         return guest && (
           guest.firstName.toLowerCase().includes(query) ||
-          guest.lastName.toLowerCase().includes(query) ||
+          guest.surname.toLowerCase().includes(query) ||
           guest.email.toLowerCase().includes(query)
         )
       })
@@ -286,10 +286,10 @@ export default function BookingsPage() {
                     {guest && (
                       <div className="flex items-center gap-3">
                         <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                          {guest.firstName[0]}{guest.lastName[0]}
+                          {guest.firstName[0]}{guest.surname[0]}
                         </div>
                         <div>
-                          <p className="font-medium">{guest.firstName} {guest.lastName}</p>
+                          <p className="font-medium">{guest.firstName} {guest.surname}</p>
                           <p className="text-xs text-muted-foreground">{booking.adults} adult{booking.adults > 1 ? 's' : ''}{booking.children > 0 ? `, ${booking.children} child${booking.children > 1 ? 'ren' : ''}` : ''}</p>
                         </div>
                       </div>

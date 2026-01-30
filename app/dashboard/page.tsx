@@ -314,10 +314,10 @@ export default function DashboardPage() {
                 <div key={guest.id} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                      {guest.firstName[0]}{guest.lastName[0]}
+                      {guest.firstName[0]}{guest.surname[0]}
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{guest.firstName} {guest.lastName}</p>
+                      <p className="text-sm font-medium">{guest.firstName} {guest.surname}</p>
                       <p className="text-xs text-muted-foreground">{guest.email}</p>
                     </div>
                   </div>
