@@ -54,6 +54,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { Separator } from '@/components/ui/separator'
 import type { Guest } from '@/lib/types'
 import { GuestRegistrationForm } from '@/components/guest-registration-form'
@@ -69,14 +80,18 @@ const loyaltyColors = {
 }
 
 export default function GuestsPage() {
+  const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState('')
   const [loyaltyFilter, setLoyaltyFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isNewGuestOpen, setIsNewGuestOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [guests, setGuests] = useState<Guest[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Fetch guests on component mount
  // Fetch guests on component mount
@@ -152,6 +167,72 @@ export default function GuestsPage() {
     
     return result
   }, [searchQuery, loyaltyFilter, guests])
+
+  // Refresh guests list
+  const refreshGuests = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/guests')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      if (Array.isArray(data.data)) {
+        setGuests(data.data)
+      } else {
+        console.error('API did not return an array:', data)
+        setGuests([])
+      }
+    } catch (error) {
+      console.error('Error fetching guests:', error)
+      setGuests([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Delete guest function
+  const handleDeleteGuest = async () => {
+    if (!selectedGuest) return
+    
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/guests/${selectedGuest.id}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete guest')
+      }
+      
+      toast({
+        title: 'Guest deleted',
+        description: `${selectedGuest.firstName} ${selectedGuest.surname} has been removed.`,
+      })
+      
+      setIsDeleteOpen(false)
+      setSelectedGuest(null)
+      await refreshGuests()
+    } catch (error) {
+      console.error('Error deleting guest:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to delete guest. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Handle edit guest
+  const handleEditGuest = (guest: Guest) => {
+    setSelectedGuest(guest)
+    setIsEditOpen(true)
+  }
 
   const totalPages = Math.ceil(filteredGuests.length / ITEMS_PER_PAGE)
   const paginatedGuests = filteredGuests.slice(
@@ -361,12 +442,15 @@ export default function GuestsPage() {
                         <Eye className="mr-2 size-4" />
                         View Profile
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEditGuest(guest)}>
                         <Pencil className="mr-2 size-4" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">
+                      <DropdownMenuItem 
+                        className="text-destructive"
+                        onClick={() => { setSelectedGuest(guest); setIsDeleteOpen(true) }}
+                      >
                         <Trash2 className="mr-2 size-4" />
                         Delete
                       </DropdownMenuItem>
@@ -416,6 +500,55 @@ export default function GuestsPage() {
           {selectedGuest && <GuestDetailView guest={selectedGuest} />}
         </DialogContent>
       </Dialog>
+
+      {/* Edit Guest Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Guest</DialogTitle>
+            <DialogDescription>
+              Update guest information and preferences
+            </DialogDescription>
+          </DialogHeader>
+          {selectedGuest && (
+            <GuestRegistrationForm 
+              guest={selectedGuest}
+              onClose={() => setIsEditOpen(false)} 
+              onSuccess={async () => {
+                setIsEditOpen(false)
+                await refreshGuests()
+                toast({
+                  title: 'Guest updated',
+                  description: `${selectedGuest.firstName} ${selectedGuest.surname} has been updated.`,
+                })
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the guest record for
+              {selectedGuest && ` ${selectedGuest.firstName} ${selectedGuest.surname}`}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteGuest}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

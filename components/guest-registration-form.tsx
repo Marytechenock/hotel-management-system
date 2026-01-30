@@ -32,14 +32,16 @@ interface Room {
 
 interface GuestRegistrationFormProps {
   onClose?: () => void
+  guest?: Guest // For edit mode
+  onSuccess?: () => void // Callback for successful operations
 }
 
-export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
+export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegistrationFormProps) {
   const { currentProperty } = useAppStore()
   const [step, setStep] = useState<'search' | 'form'>('search')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Guest[]>([])
-  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(guest || null)
   const [isSearching, setIsSearching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   
@@ -86,7 +88,67 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
     };
 
     fetchRooms();
-  }, [currentProperty]);
+  }, [currentProperty])
+
+  // Handle edit mode
+  useEffect(() => {
+    if (guest) {
+      setStep('form')
+      setSelectedGuest(guest)
+      setFormData({
+        // Primary Guest
+        title: guest.title || '',
+        surname: guest.surname || '',
+        firstName: guest.firstName || '',
+        nationality: guest.nationality || '',
+        idPassportNumber: guest.idPassportNumber || '',
+        
+        // Party Info
+        numberOfAdults: guest.numberOfAdults || 1,
+        numberOfChildren: guest.numberOfChildren || 0,
+        childrenAges: guest.childrenAges?.map(String) || [],
+        
+        // Other Adult
+        otherAdultSurname: guest.otherAdult?.surname || '',
+        otherAdultFirstName: guest.otherAdult?.firstName || '',
+        otherAdultNationality: guest.otherAdult?.nationality || '',
+        otherAdultIdPassport: guest.otherAdult?.idPassportNumber || '',
+        
+        // Address
+        postalAddress: guest.postalAddress || '',
+        residentialAddress: guest.residentialAddress || '',
+        city: guest.city || '',
+        stateProvince: guest.stateProvince || '',
+        country: guest.country || '',
+        
+        // Contact
+        telHome: guest.telHome || '',
+        telBusiness: guest.telBusiness || '',
+        cellphone: guest.cellphone || '',
+        email: guest.email || '',
+        
+        // Stay Info
+        dateIn: guest.dateIn ? new Date(guest.dateIn).toISOString().split('T')[0] : '',
+        dateOut: guest.dateOut ? new Date(guest.dateOut).toISOString().split('T')[0] : '',
+        roomNumber: guest.roomNumber || '',
+        accountPayableBy: guest.accountPayableBy || '',
+        vehicleRegNo: guest.vehicleRegNo || '',
+        breakfastTime: guest.breakfastTime || '',
+        
+        // Food Preferences
+        beefYes: guest.preferences?.beef || false,
+        beefNo: !guest.preferences?.beef,
+        porkYes: guest.preferences?.pork || false,
+        porkNo: !guest.preferences?.pork,
+        eggStyle: guest.preferences?.eggStyle || '',
+        serveDinner: guest.serveDinner || false,
+        
+        // Agreement
+        agreedToTerms: guest.agreedToTerms || false,
+        signatureDate: guest.signatureDate ? new Date(guest.signatureDate).toISOString().split('T')[0] : '',
+      })
+    }
+  }, [guest]);
 
   // Fuzzy search with debounce
   useEffect(() => {
@@ -262,7 +324,7 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
     setIsSaving(true)
     
     // Transform form data to match Guest type expected by API
-    const guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt' | 'loyaltyPoints' | 'totalStays' | 'totalSpent'> & { id?: string } = {
+    const guestData: Omit<Guest, 'id' | 'createdAt' | 'updatedAt'> & { id?: string } = {
       // Include existing guest ID if updating
       ...(selectedGuest && { id: selectedGuest.id }),
       
@@ -327,6 +389,15 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
       
       // System Fields - defaults for new guests, preserve for existing
       loyaltyTier: selectedGuest?.loyaltyTier || 'bronze',
+      loyaltyPoints: selectedGuest?.loyaltyPoints || 0,
+      totalStays: selectedGuest ? 
+        // For existing guests, increment stays if this is a new booking (different dates)
+        (formData.dateIn !== new Date(selectedGuest.dateIn).toISOString().split('T')[0] || 
+         formData.dateOut !== new Date(selectedGuest.dateOut).toISOString().split('T')[0]) 
+          ? selectedGuest.totalStays + 1 
+          : selectedGuest.totalStays
+        : 1, // New guest starts with 1 stay
+      totalSpent: selectedGuest?.totalSpent || 0,
       notes: selectedGuest?.notes,
       tags: selectedGuest?.tags || [],
     }
@@ -335,16 +406,27 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
     
     // Make API call
     try {
-      await axios.post('/api/guests', guestData)
+      if (selectedGuest?.id) {
+        // Update existing guest
+        await axios.patch(`/api/guests/${selectedGuest.id}`, guestData)
+        console.log('[v0] Guest updated successfully')
+      } else {
+        // Create new guest
+        await axios.post('/api/guests', guestData)
+        console.log('[v0] Guest saved successfully')
+      }
+      
+      // Call onSuccess callback if provided
+      onSuccess?.()
+      
       // Handle successful API call
-      console.log('[v0] Guest saved successfully')
+      onClose?.()
     } catch (error) {
       // Handle API error
       console.error('[v0] Error saving guest:', error)
+    } finally {
+      setIsSaving(false)
     }
-    
-    setIsSaving(false)
-    onClose?.()
   }
 
   const updateForm = (field: string, value: string | number | boolean | string[]) => {
@@ -1019,13 +1101,17 @@ export function GuestRegistrationForm({ onClose }: GuestRegistrationFormProps) {
       </div>
 
       <div className="flex justify-between pt-4 sticky bottom-0 bg-background pb-2">
-        <Button variant="outline" onClick={() => setStep('search')}>
-          Back to Search
-        </Button>
-        <Button onClick={handleSave} disabled={isSaving || !formData.agreedToTerms}>
-          {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
-          {selectedGuest ? 'Update & Check In' : 'Register Guest'}
-        </Button>
+        {!guest && (
+          <Button variant="outline" onClick={() => setStep('search')}>
+            Back to Search
+          </Button>
+        )}
+        <div className={guest ? 'ml-auto' : ''}>
+          <Button onClick={handleSave} disabled={isSaving || !formData.agreedToTerms}>
+            {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {guest ? 'Update Guest' : 'Register Guest'}
+          </Button>
+        </div>
       </div>
     </div>
   )

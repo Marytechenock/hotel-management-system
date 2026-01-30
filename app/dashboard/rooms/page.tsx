@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   BedDouble,
   Search,
@@ -14,6 +14,8 @@ import {
   Sparkles,
   Users,
   DollarSign,
+  Loader2,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,7 +35,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { rooms, getRoomsByProperty } from '@/lib/mock-data'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { RoomForm } from '@/components/room-form'
+import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
 import type { Room, RoomStatus, RoomType } from '@/lib/types'
 
@@ -62,37 +82,68 @@ const typeLabels: Record<RoomType, string> = {
 }
 
 export default function RoomsPage() {
+  const { toast } = useToast()
   const { currentProperty } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [viewMode, setViewMode] = useState<'grid' | 'floor'>('grid')
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null)
 
+  // Fetch rooms from API
+  const fetchRooms = async () => {
+    try {
+      setIsLoading(true)
+      const params = new URLSearchParams()
+      if (currentProperty?.id) params.append('propertyId', currentProperty.id)
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
+      if (typeFilter && typeFilter !== 'all') params.append('type', typeFilter)
+      if (searchQuery) params.append('q', searchQuery)
+
+      const response = await fetch(`/api/rooms?${params.toString()}`)
+      if (!response.ok) throw new Error('Failed to fetch rooms')
+      
+      const data = await response.json()
+      setRooms(data.data || [])
+    } catch (error) {
+      console.error('Error fetching rooms:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load rooms',
+        variant: 'destructive',
+      })
+      setRooms([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Fetch rooms when dependencies change
+  useEffect(() => {
+    fetchRooms()
+  }, [currentProperty, statusFilter, typeFilter, searchQuery])
+
+  // Filter rooms client-side for search (since API already handles other filters)
   const filteredRooms = useMemo(() => {
-    let result = currentProperty 
-      ? getRoomsByProperty(currentProperty.id) 
-      : rooms
-
-    if (searchQuery) {
-      result = result.filter(r => 
-        r.number.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    }
-
-    if (statusFilter !== 'all') {
-      result = result.filter(r => r.status === statusFilter)
-    }
-
-    if (typeFilter !== 'all') {
-      result = result.filter(r => r.type === typeFilter)
-    }
-
-    return result
-  }, [currentProperty, searchQuery, statusFilter, typeFilter])
+    if (!searchQuery) return rooms
+    return rooms.filter((room: Room) => 
+      room.number.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [rooms, searchQuery])
 
   const roomsByFloor = useMemo(() => {
     const floors = new Map<number, Room[]>()
-    filteredRooms.forEach(room => {
+    filteredRooms.forEach((room: Room) => {
       const existing = floors.get(room.floor) || []
       floors.set(room.floor, [...existing, room])
     })
@@ -100,17 +151,150 @@ export default function RoomsPage() {
   }, [filteredRooms])
 
   const stats = useMemo(() => {
-    const propertyRooms = currentProperty 
-      ? getRoomsByProperty(currentProperty.id) 
-      : rooms
     return {
-      total: propertyRooms.length,
-      available: propertyRooms.filter(r => r.status === 'available').length,
-      occupied: propertyRooms.filter(r => r.status === 'occupied').length,
-      cleaning: propertyRooms.filter(r => r.status === 'cleaning').length,
-      maintenance: propertyRooms.filter(r => r.status === 'maintenance').length,
+      total: rooms.length,
+      available: rooms.filter((r: Room) => r.status === 'available').length,
+      occupied: rooms.filter((r: Room) => r.status === 'occupied').length,
+      cleaning: rooms.filter((r: Room) => r.status === 'cleaning').length,
+      maintenance: rooms.filter((r: Room) => r.status === 'maintenance').length,
     }
-  }, [currentProperty])
+  }, [rooms])
+
+  // Handle room status update
+  const updateRoomStatus = async (roomId: string, newStatus: RoomStatus) => {
+    setIsUpdating(true)
+    try {
+      const response = await fetch(`/api/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      
+      if (!response.ok) throw new Error('Failed to update room status')
+      
+      toast({
+        title: 'Room updated',
+        description: `Room status changed to ${newStatus}`,
+      })
+      
+      await fetchRooms()
+    } catch (error) {
+      console.error('Error updating room:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update room status',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  // Handle room deletion
+  const handleDeleteRoom = async () => {
+    if (!selectedRoom) return
+    
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/rooms/${selectedRoom.id}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) throw new Error('Failed to delete room')
+      
+      toast({
+        title: 'Room deleted',
+        description: `Room ${selectedRoom.number} has been removed.`,
+      })
+      
+      setIsDeleteOpen(false)
+      setSelectedRoom(null)
+      await fetchRooms()
+    } catch (error) {
+      console.error('Error deleting room:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to delete room',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Handle room creation
+  const handleCreateRoom = async (roomData: Partial<Room>) => {
+    setIsCreating(true)
+    try {
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...roomData,
+          propertyId: currentProperty?.id,
+        }),
+      })
+      
+      if (!response.ok) throw new Error('Failed to create room')
+      
+      toast({
+        title: 'Room created',
+        description: `Room ${roomData.number} has been added.`,
+      })
+      
+      setIsCreateOpen(false)
+      await fetchRooms()
+    } catch (error) {
+      console.error('Error creating room:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to create room',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  // Handle room editing
+  const handleEditRoom = async (roomData: Partial<Room>) => {
+    if (!editingRoom) return
+    
+    setIsEditing(true)
+    try {
+      const response = await fetch(`/api/rooms/${editingRoom.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(roomData),
+      })
+      
+      if (!response.ok) throw new Error('Failed to update room')
+      
+      toast({
+        title: 'Room updated',
+        description: `Room ${roomData.number} has been updated.`,
+      })
+      
+      setIsEditOpen(false)
+      setEditingRoom(null)
+      await fetchRooms()
+    } catch (error) {
+      console.error('Error updating room:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update room',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  // Open edit dialog with room data
+  const openEditDialog = (room: Room) => {
+    setEditingRoom(room)
+    setIsEditOpen(true)
+  }
 
   return (
     <div className="p-6">
@@ -121,113 +305,119 @@ export default function RoomsPage() {
             Manage rooms for {currentProperty?.name || 'all properties'}
           </p>
         </div>
-        <Button>
+        <Button onClick={() => setIsCreateOpen(true)}>
           <Plus className="mr-2 size-4" />
           Add Room
         </Button>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-5 mb-6">
-        <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('all')}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Rooms</p>
-                <p className="text-2xl font-bold">{stats.total}</p>
-              </div>
-              <BedDouble className="size-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={`cursor-pointer transition-colors ${statusFilter === 'available' ? 'ring-2 ring-success' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('available')}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Available</p>
-                <p className="text-2xl font-bold text-success">{stats.available}</p>
-              </div>
-              <BedDouble className="size-8 text-success" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={`cursor-pointer transition-colors ${statusFilter === 'occupied' ? 'ring-2 ring-primary' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('occupied')}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Occupied</p>
-                <p className="text-2xl font-bold text-primary">{stats.occupied}</p>
-              </div>
-              <Users className="size-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={`cursor-pointer transition-colors ${statusFilter === 'cleaning' ? 'ring-2 ring-warning' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('cleaning')}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Cleaning</p>
-                <p className="text-2xl font-bold text-warning-foreground">{stats.cleaning}</p>
-              </div>
-              <Sparkles className="size-8 text-warning" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={`cursor-pointer transition-colors ${statusFilter === 'maintenance' ? 'ring-2 ring-destructive' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('maintenance')}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Maintenance</p>
-                <p className="text-2xl font-bold text-destructive">{stats.maintenance}</p>
-              </div>
-              <Wrench className="size-8 text-destructive" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-muted-foreground">Loading rooms...</span>
+        </div>
+      )}
 
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-1 items-center gap-2">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search by room number..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="available">Available</SelectItem>
-                  <SelectItem value="occupied">Occupied</SelectItem>
-                  <SelectItem value="cleaning">Cleaning</SelectItem>
-                  <SelectItem value="maintenance">Maintenance</SelectItem>
-                  <SelectItem value="reserved">Reserved</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Room Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="deluxe">Deluxe</SelectItem>
-                  <SelectItem value="suite">Suite</SelectItem>
-                  <SelectItem value="executive">Executive</SelectItem>
-                  <SelectItem value="penthouse">Penthouse</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* Content */}
+      {!isLoading && (
+        <>
+          {/* Quick Stats */}
+          <div className="grid gap-4 md:grid-cols-5 mb-6">
+            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('all')}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Rooms</p>
+                    <p className="text-2xl font-bold">{stats.total}</p>
+                  </div>
+                  <BedDouble className="size-8 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className={`cursor-pointer transition-colors ${statusFilter === 'available' ? 'ring-2 ring-success' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('available')}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Available</p>
+                    <p className="text-2xl font-bold text-success">{stats.available}</p>
+                  </div>
+                  <BedDouble className="size-8 text-success" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className={`cursor-pointer transition-colors ${statusFilter === 'occupied' ? 'ring-2 ring-primary' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('occupied')}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Occupied</p>
+                    <p className="text-2xl font-bold text-primary">{stats.occupied}</p>
+                  </div>
+                  <Users className="size-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className={`cursor-pointer transition-colors ${statusFilter === 'cleaning' ? 'ring-2 ring-warning' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('cleaning')}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Cleaning</p>
+                    <p className="text-2xl font-bold text-warning">{stats.cleaning}</p>
+                  </div>
+                  <Sparkles className="size-8 text-warning" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className={`cursor-pointer transition-colors ${statusFilter === 'maintenance' ? 'ring-2 ring-destructive' : 'hover:bg-accent/50'}`} onClick={() => setStatusFilter('maintenance')}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Maintenance</p>
+                    <p className="text-2xl font-bold text-destructive">{stats.maintenance}</p>
+                  </div>
+                  <Wrench className="size-8 text-destructive" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <Input
+                placeholder="Search rooms..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-sm"
+              />
             </div>
-            <div className="flex items-center gap-2">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="available">Available</SelectItem>
+                <SelectItem value="occupied">Occupied</SelectItem>
+                <SelectItem value="cleaning">Cleaning</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="reserved">Reserved</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Filter by type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="standard">Standard</SelectItem>
+                <SelectItem value="deluxe">Deluxe</SelectItem>
+                <SelectItem value="suite">Suite</SelectItem>
+                <SelectItem value="executive">Executive</SelectItem>
+                <SelectItem value="penthouse">Penthouse</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
               <Button
                 variant={viewMode === 'grid' ? 'default' : 'outline'}
                 size="sm"
@@ -240,47 +430,131 @@ export default function RoomsPage() {
                 size="sm"
                 onClick={() => setViewMode('floor')}
               >
-                By Floor
+                Floor
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Room Grid */}
-      {viewMode === 'grid' ? (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {filteredRooms.map((room) => (
-            <RoomCard key={room.id} room={room} />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {roomsByFloor.map(([floor, floorRooms]) => (
-            <div key={floor}>
-              <h3 className="text-lg font-semibold mb-3">Floor {floor}</h3>
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {floorRooms.map((room) => (
-                  <RoomCard key={room.id} room={room} />
-                ))}
-              </div>
+          {/* Room Grid */}
+          {viewMode === 'grid' ? (
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {filteredRooms.map((room: Room) => (
+                <RoomCard 
+                  key={room.id} 
+                  room={room} 
+                  onUpdateStatus={updateRoomStatus}
+                  onDelete={(room: Room) => {
+                    setSelectedRoom(room)
+                    setIsDeleteOpen(true)
+                  }}
+                  onEdit={openEditDialog}
+                />
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="space-y-6">
+              {roomsByFloor.map(([floor, floorRooms]) => (
+                <div key={floor}>
+                  <h3 className="text-lg font-semibold mb-3">Floor {floor}</h3>
+                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                    {floorRooms.map((room: Room) => (
+                      <RoomCard 
+                        key={room.id} 
+                        room={room} 
+                        onUpdateStatus={updateRoomStatus}
+                        onDelete={(room: Room) => {
+                          setSelectedRoom(room)
+                          setIsDeleteOpen(true)
+                        }}
+                        onEdit={openEditDialog}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
-      {filteredRooms.length === 0 && (
-        <Card className="p-12 text-center">
-          <BedDouble className="mx-auto size-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium">No rooms found</h3>
-          <p className="text-muted-foreground">Try adjusting your search or filters</p>
-        </Card>
+          {filteredRooms.length === 0 && (
+            <Card className="p-12 text-center">
+              <BedDouble className="mx-auto size-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium">No rooms found</h3>
+              <p className="text-muted-foreground">Try adjusting your search or filters</p>
+            </Card>
+          )}
+
+          {/* Delete Confirmation Dialog */}
+          <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the room
+                  {selectedRoom && ` ${selectedRoom.number} from floor ${selectedRoom.floor}`}.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteRoom}
+                  disabled={isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Create Room Dialog */}
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Add New Room</DialogTitle>
+                <DialogDescription>
+                  Create a new room for {currentProperty?.name || 'the property'}.
+                </DialogDescription>
+              </DialogHeader>
+              <RoomForm 
+                onSubmit={handleCreateRoom}
+                onCancel={() => setIsCreateOpen(false)}
+                isSubmitting={isCreating}
+              />
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Room Dialog */}
+          <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Edit Room</DialogTitle>
+                <DialogDescription>
+                  Update room details for {editingRoom?.number || 'the room'}.
+                </DialogDescription>
+              </DialogHeader>
+              <RoomForm 
+                onSubmit={handleEditRoom}
+                onCancel={() => {
+                  setIsEditOpen(false)
+                  setEditingRoom(null)
+                }}
+                isSubmitting={isEditing}
+                room={editingRoom || undefined}
+              />
+            </DialogContent>
+          </Dialog>
+        </>
       )}
     </div>
   )
 }
 
-function RoomCard({ room }: { room: Room }) {
+function RoomCard({ room, onUpdateStatus, onDelete, onEdit }: { 
+  room: Room
+  onUpdateStatus: (roomId: string, status: RoomStatus) => void
+  onDelete: (room: Room) => void 
+  onEdit: (room: Room) => void
+}) {
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow">
       <div className={`h-1 ${
@@ -303,17 +577,39 @@ function RoomCard({ room }: { room: Room }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEdit(room)}>
                 <Pencil className="mr-2 size-4" />
                 Edit Room
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => onUpdateStatus(room.id, 'cleaning')}
+                disabled={room.status === 'cleaning'}
+              >
                 <Sparkles className="mr-2 size-4" />
                 Mark as Cleaning
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => onUpdateStatus(room.id, 'maintenance')}
+                disabled={room.status === 'maintenance'}
+              >
                 <Wrench className="mr-2 size-4" />
                 Report Maintenance
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => onUpdateStatus(room.id, 'available')}
+                disabled={room.status === 'available'}
+              >
+                <BedDouble className="mr-2 size-4" />
+                Mark as Available
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                className="text-destructive"
+                onClick={() => onDelete(room)}
+              >
+                <Trash2 className="mr-2 size-4" />
+                Delete Room
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -339,7 +635,7 @@ function RoomCard({ room }: { room: Room }) {
           </div>
         </div>
 
-        {room.amenities.length > 0 && (
+        {room.amenities && room.amenities.length > 0 && (
           <div className="mt-3 pt-3 border-t">
             <div className="flex flex-wrap gap-1">
               {room.amenities.slice(0, 3).map((amenity) => (
