@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -83,6 +84,49 @@ const managementNavItems = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { currentUser, currentProperty, properties, setCurrentProperty } = useAppStore()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <Hotel className="size-5" />
+            </div>
+            <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+              <span className="text-sm font-semibold text-sidebar-foreground">OmniHotel Pro</span>
+              <span className="text-xs text-sidebar-foreground/60">Management Suite</span>
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarSeparator />
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Operations</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {mainNavItems.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild tooltip={item.title}>
+                      <Link href={item.href}>
+                        <item.icon className="size-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
+    )
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -142,7 +186,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild
-                    isActive={pathname === item.href}
+                    isActive={mounted && pathname === item.href}
                     tooltip={item.title}
                   >
                     <Link href={item.href}>
@@ -164,7 +208,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild
-                    isActive={pathname === item.href}
+                    isActive={mounted && pathname === item.href}
                     tooltip={item.title}
                   >
                     <Link href={item.href}>
@@ -194,7 +238,7 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === '/dashboard/settings'} tooltip="Settings">
+            <SidebarMenuButton asChild isActive={mounted && pathname === '/dashboard/settings'} tooltip="Settings">
               <Link href="/dashboard/settings">
                 <Settings className="size-4" />
                 <span>Settings</span>

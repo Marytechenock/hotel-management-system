@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect, useMemo } from 'react'
 import { 
   Users, 
   BedDouble, 
@@ -9,19 +10,14 @@ import {
   CalendarCheck,
   CalendarX,
   Clock,
+  Loader2,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
-import { 
-  dashboardMetrics, 
-  occupancyData, 
-  revenueBySource,
-  bookings,
-  guests,
-  rooms,
-} from '@/lib/mock-data'
+import type { Booking, Room, Guest } from '@/lib/types'
 import {
   ChartConfig,
   ChartContainer,
@@ -68,18 +64,209 @@ const sourceChartConfig = {
 } satisfies ChartConfig
 
 export default function DashboardPage() {
+  const { toast } = useToast()
   const { currentProperty } = useAppStore()
-  
-  const propertyRooms = currentProperty 
-    ? rooms.filter(r => r.propertyId === currentProperty.id) 
-    : rooms
-  
-  const propertyBookings = currentProperty
-    ? bookings.filter(b => b.propertyId === currentProperty.id)
-    : bookings
+  const [isLoading, setIsLoading] = useState(true)
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [guests, setGuests] = useState<Guest[]>([])
 
-  const todayArrivals = propertyBookings.filter(b => b.status === 'confirmed')
-  const todayDepartures = propertyBookings.filter(b => b.status === 'checked_in')
+  // Fetch dashboard data
+  const fetchDashboardData = async () => {
+    try {
+      setIsLoading(true)
+      
+      const params = new URLSearchParams()
+      if (currentProperty?.id) params.append('propertyId', currentProperty.id)
+      params.append('limit', '1000') // Get all data for dashboard calculations
+
+      const [bookingsRes, roomsRes, guestsRes] = await Promise.all([
+        fetch(`/api/bookings?${params.toString()}`),
+        fetch(`/api/rooms?${params.toString()}`),
+        fetch('/api/guests?limit=10')
+      ])
+
+      if (!bookingsRes.ok || !roomsRes.ok || !guestsRes.ok) {
+        throw new Error('Failed to fetch dashboard data')
+      }
+
+      const bookingsData = await bookingsRes.json()
+      const roomsData = await roomsRes.json()
+      const guestsData = await guestsRes.json()
+
+      setBookings(bookingsData.data || [])
+      setRooms(roomsData.data || [])
+      setGuests(guestsData.data || [])
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load dashboard data',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [currentProperty?.id])
+
+  // Calculate dashboard metrics from real data
+  const dashboardMetrics = useMemo(() => {
+    const propertyBookings = currentProperty 
+      ? bookings.filter(b => b.propertyId === currentProperty.id)
+      : bookings
+
+    const propertyRooms = currentProperty
+      ? rooms.filter(r => r.propertyId === currentProperty.id)
+      : rooms
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    // Calculate occupancy rate
+    const occupiedRooms = propertyBookings.filter(b => 
+      b.status === 'checked_in' || 
+      (b.status === 'confirmed' && new Date(b.checkIn) <= tomorrow && new Date(b.checkOut) > today)
+    ).length
+    const occupancyRate = propertyRooms.length > 0 ? Math.round((occupiedRooms / propertyRooms.length) * 100) : 0
+
+    // Calculate revenue (MTD - month to date)
+    const currentMonth = new Date()
+    currentMonth.setDate(1)
+    currentMonth.setHours(0, 0, 0, 0)
+    const monthlyRevenue = propertyBookings
+      .filter(b => new Date(b.createdAt) >= currentMonth)
+      .reduce((sum, b) => sum + b.totalAmount, 0)
+
+    // Calculate average daily rate
+    const checkedInBookings = propertyBookings.filter(b => b.status === 'checked_in')
+    const averageRate = checkedInBookings.length > 0 
+      ? Math.round(checkedInBookings.reduce((sum, b) => sum + b.totalAmount, 0) / checkedInBookings.length)
+      : 0
+
+    // Calculate guests in house
+    const guestsInHouse = propertyBookings.filter(b => b.status === 'checked_in')
+      .reduce((sum, b) => sum + b.adults + b.children, 0)
+
+    // Calculate today's arrivals and departures
+    const arrivalsToday = propertyBookings.filter(b => {
+      const checkIn = new Date(b.checkIn)
+      checkIn.setHours(0, 0, 0, 0)
+      return checkIn.getTime() === today.getTime() && b.status === 'confirmed'
+    }).length
+
+    const departuresToday = propertyBookings.filter(b => {
+      const checkOut = new Date(b.checkOut)
+      checkOut.setHours(0, 0, 0, 0)
+      return checkOut.getTime() === today.getTime() && b.status === 'checked_in'
+    }).length
+
+    // Available rooms
+    const availableRooms = propertyRooms.filter(r => r.status === 'available').length
+
+    return {
+      occupancyRate,
+      revenue: monthlyRevenue,
+      averageRate,
+      guestsInHouse,
+      arrivalsToday,
+      departuresToday,
+      pendingCheckIns: arrivalsToday,
+      pendingCheckOuts: departuresToday,
+      availableRooms,
+      occupancyChange: 0, // TODO: Calculate historical comparison
+      revenueChange: 0, // TODO: Calculate historical comparison
+      averageRateChange: 0, // TODO: Calculate historical comparison
+    }
+  }, [bookings, rooms, currentProperty])
+
+  // Generate occupancy trend data for last 7 days
+  const occupancyData = useMemo(() => {
+    const data = []
+    const today = new Date()
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today)
+      date.setDate(date.getDate() - i)
+      date.setHours(0, 0, 0, 0)
+      
+      const nextDay = new Date(date)
+      nextDay.setDate(nextDay.getDate() + 1)
+      
+      const propertyBookings = currentProperty 
+        ? bookings.filter(b => b.propertyId === currentProperty.id)
+        : bookings
+
+      const propertyRooms = currentProperty
+        ? rooms.filter(r => r.propertyId === currentProperty.id)
+        : rooms
+
+      const occupiedCount = propertyBookings.filter(b => {
+        const checkIn = new Date(b.checkIn)
+        const checkOut = new Date(b.checkOut)
+        return (
+          (b.status === 'checked_in' || b.status === 'confirmed') &&
+          checkIn < nextDay && checkOut > date
+        )
+      }).length
+
+      const occupancy = propertyRooms.length > 0 ? Math.round((occupiedCount / propertyRooms.length) * 100) : 0
+      
+      data.push({
+        date: date.toISOString(),
+        occupancy,
+        revenue: propertyBookings
+          .filter(b => new Date(b.checkIn).getTime() === date.getTime())
+          .reduce((sum, b) => sum + b.totalAmount, 0)
+      })
+    }
+    
+    return data
+  }, [bookings, rooms, currentProperty])
+
+  // Calculate revenue by source
+  const revenueBySource = useMemo(() => {
+    const propertyBookings = currentProperty 
+      ? bookings.filter(b => b.propertyId === currentProperty.id)
+      : bookings
+
+    const sourceMap = new Map<string, number>()
+    
+    propertyBookings.forEach(booking => {
+      const current = sourceMap.get(booking.source) || 0
+      sourceMap.set(booking.source, current + booking.totalAmount)
+    })
+
+    const sourceLabels: Record<string, string> = {
+      direct: 'Direct',
+      'booking.com': 'Booking.com',
+      expedia: 'Expedia',
+      airbnb: 'Airbnb',
+      phone: 'Phone',
+      walk_in: 'Walk-in',
+    }
+
+    return Array.from(sourceMap.entries()).map(([source, amount]) => ({
+      source: sourceLabels[source] || source,
+      amount
+    })).sort((a, b) => b.amount - a.amount)
+  }, [bookings, currentProperty])
+
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-muted-foreground">Loading dashboard...</span>
+        </div>
+      </div>
+    )
+  }
   
   return (
     <div className="p-6">
@@ -283,6 +470,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {['available', 'occupied', 'cleaning', 'maintenance', 'reserved'].map((status) => {
+              const propertyRooms = currentProperty
+                ? rooms.filter(r => r.propertyId === currentProperty.id)
+                : rooms
               const count = propertyRooms.filter(r => r.status === status).length
               const total = propertyRooms.length
               const percentage = total > 0 ? (count / total) * 100 : 0
@@ -328,10 +518,13 @@ export default function DashboardPage() {
                     }
                     className="text-xs capitalize"
                   >
-                    {guest.loyaltyTier}
+                    {guest.loyaltyTier || 'standard'}
                   </Badge>
                 </div>
               ))}
+              {guests.length === 0 && (
+                <p className="text-center text-muted-foreground text-sm">No guests found</p>
+              )}
             </div>
           </CardContent>
         </Card>

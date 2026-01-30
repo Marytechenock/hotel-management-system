@@ -64,9 +64,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useToast } from '@/hooks/use-toast'
 import { Separator } from '@/components/ui/separator'
-import type { Guest } from '@/lib/types'
+import { useToast } from '@/hooks/use-toast'
+import { useAppStore } from '@/lib/store'
+import { LoyaltyService, DEFAULT_LOYALTY_CONFIG } from '@/lib/loyalty'
+import type { Guest, LoyaltyTier } from '@/lib/types'
 import { GuestRegistrationForm } from '@/components/guest-registration-form'
 import { format } from 'date-fns'
 
@@ -161,7 +163,7 @@ export default function GuestsPage() {
     if (loyaltyFilter !== 'all') {
       result = result.filter(g => {
         if (!g || typeof g !== 'object') return false
-        return g.loyaltyTier === loyaltyFilter
+        return g.loyaltyTier?.id === loyaltyFilter
       })
     }
     
@@ -257,15 +259,18 @@ export default function GuestsPage() {
     
     return {
       total: guests.length,
-      platinum: guests.filter(g => g?.loyaltyTier === 'platinum').length,
-      gold: guests.filter(g => g?.loyaltyTier === 'gold').length,
+      platinum: guests.filter(g => g.loyaltyTier?.id === 'platinum').length,
+      gold: guests.filter(g => g.loyaltyTier?.id === 'gold').length,
       newThisMonth: guests.filter(g => {
         if (!g || !g.createdAt) return false
         try {
-          const createdAt = new Date(g.createdAt)
-          return createdAt > monthAgo && createdAt <= now
-        } catch (e) {
-          console.error('Error parsing date:', g.createdAt, e)
+          const createdDate = new Date(g.createdAt)
+          const currentMonth = new Date()
+          return (
+            createdDate.getMonth() === currentMonth.getMonth() &&
+            createdDate.getFullYear() === currentMonth.getFullYear()
+          )
+        } catch {
           return false
         }
       }).length,
@@ -419,12 +424,33 @@ export default function GuestsPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className={loyaltyColors[guest.loyaltyTier]}>
-                    {guest.loyaltyTier === 'platinum' && <Crown className="mr-1 size-3" />}
-                    {guest.loyaltyTier === 'gold' && <Star className="mr-1 size-3" />}
-                    <span className="capitalize">{guest.loyaltyTier}</span>
-                  </Badge>
-                  <p className="text-xs text-muted-foreground mt-1">{guest.loyaltyPoints.toLocaleString()} pts</p>
+                  {(() => {
+                    const tier = guest.loyaltyTier
+                    if (!tier) {
+                      return (
+                        <div>
+                          <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200">
+                            <span className="capitalize">Standard</span>
+                          </Badge>
+                          <p className="text-xs text-muted-foreground mt-1">{guest.loyaltyPoints.toLocaleString()} pts</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div>
+                        <Badge variant="outline" style={{
+                          backgroundColor: `${tier.color}20`,
+                          color: tier.color,
+                          borderColor: tier.color
+                        }}>
+                          {tier.id === 'platinum' && <Crown className="mr-1 size-3" />}
+                          {tier.id === 'gold' && <Star className="mr-1 size-3" />}
+                          <span className="capitalize">{tier.name}</span>
+                        </Badge>
+                        <p className="text-xs text-muted-foreground mt-1">{guest.loyaltyPoints.toLocaleString()} pts</p>
+                      </div>
+                    )
+                  })()}
                 </TableCell>
                 <TableCell>
                   <span className="font-medium">{guest.totalStays}</span>
@@ -565,10 +591,26 @@ function GuestDetailView({ guest }: { guest: Guest }) {
           <h3 className="text-xl font-semibold">{guest.title} {guest.firstName} {guest.surname}</h3>
           <p className="text-muted-foreground">{guest.nationality}</p>
           <div className="flex items-center gap-2 mt-1">
-            <Badge variant="outline" className={loyaltyColors[guest.loyaltyTier]}>
-              {guest.loyaltyTier === 'platinum' && <Crown className="mr-1 size-3" />}
-              <span className="capitalize">{guest.loyaltyTier}</span>
-            </Badge>
+            {(() => {
+              const tier = guest.loyaltyTier
+              if (!tier) {
+                return (
+                  <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200">
+                    <span className="capitalize">Standard</span>
+                  </Badge>
+                )
+              }
+              return (
+                <Badge variant="outline" style={{
+                  backgroundColor: `${tier.color}20`,
+                  color: tier.color,
+                  borderColor: tier.color
+                }}>
+                  {tier.id === 'platinum' && <Crown className="mr-1 size-3" />}
+                  <span className="capitalize">{tier.name}</span>
+                </Badge>
+              )
+            })()}
             {guest.tags.map(tag => (
               <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
             ))}

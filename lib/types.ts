@@ -66,9 +66,11 @@ export interface Guest {
   // Agreement
   agreedToTerms: boolean
   signatureDate: Date
+  signatureData?: string // Base64 encoded signature image
   
   // System Fields
-  loyaltyTier: 'bronze' | 'silver' | 'gold' | 'platinum'
+  loyaltyTierId?: string // Reference to LoyaltyTier.id
+  loyaltyTier?: LoyaltyTier // Populated from API
   loyaltyPoints: number
   totalStays: number
   totalSpent: number
@@ -166,4 +168,76 @@ export interface RevenueBySource {
   source: string
   amount: number
   percentage: number
+}
+
+// Configurable Loyalty Tier System
+export interface LoyaltyTier {
+  id: string
+  name: string
+  level: number // Higher number = higher tier
+  minStays: number
+  minSpent: number
+  minPoints: number
+  benefits: LoyaltyBenefit[]
+  color: string // CSS color for badges
+  icon?: string // Icon name (optional)
+  pointsMultiplier: number // Multiplier for points earned
+  discountRate: number // Discount percentage (0-100)
+}
+
+export interface LoyaltyBenefit {
+  id: string
+  name: string
+  description: string
+  type: 'discount' | 'upgrade' | 'service' | 'amenity' | 'bonus'
+  value: number // Discount % or other value
+}
+
+export interface LoyaltyConfiguration {
+  id: string
+  propertyId?: string // undefined = global config
+  tiers: LoyaltyTier[]
+  pointsPerDollar: number
+  pointsPerStay: number
+  welcomeBonusPoints: number
+  referralBonusPoints: number
+  birthdayBonusPoints: number
+  isActive: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+// Loyalty Activity Tracking
+export interface LoyaltyActivity {
+  id: string
+  guestId: string
+  type: 'stay' | 'booking' | 'referral' | 'birthday' | 'bonus' | 'redemption'
+  points: number
+  description: string
+  bookingId?: string
+  createdAt: Date
+}
+
+// Points Redemption
+export interface LoyaltyReward {
+  id: string
+  name: string
+  description: string
+  pointsCost: number
+  type: 'discount' | 'upgrade' | 'service' | 'amenity'
+  value: number
+  isActive: boolean
+  propertyId?: string
+}
+
+export interface LoyaltyRedemption {
+  id: string
+  guestId: string
+  rewardId: string
+  pointsUsed: number
+  status: 'pending' | 'confirmed' | 'used' | 'expired'
+  bookingId?: string
+  createdAt: Date
+  usedAt?: Date
+  expiresAt?: Date
 }

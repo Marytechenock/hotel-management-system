@@ -113,6 +113,7 @@ model Guest {
 
   agreedToTerms    Boolean
   signatureDate    DateTime
+  signatureData    String? // Base64 encoded signature image
 
   loyaltyTier      LoyaltyTier
   loyaltyPoints    Int

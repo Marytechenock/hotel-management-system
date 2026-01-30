@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import {
+import { SignaturePad } from '@/components/signature-pad'
+import { 
   Select,
   SelectContent,
   SelectItem,
@@ -146,6 +147,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
         // Agreement
         agreedToTerms: guest.agreedToTerms || false,
         signatureDate: guest.signatureDate ? new Date(guest.signatureDate).toISOString().split('T')[0] : '',
+        signatureData: guest.signatureData || '',
       })
     }
   }, [guest]);
@@ -219,6 +221,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
     // Agreement
     agreedToTerms: false,
     signatureDate: '',
+    signatureData: '',
   })
 
   const searchGuests = async (query: string) => {
@@ -274,6 +277,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       serveDinner: guest.serveDinner,
       agreedToTerms: false,
       signatureDate: new Date().toISOString().split('T')[0],
+      signatureData: guest.signatureData || '',
     })
     setStep('form')
   }
@@ -316,6 +320,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       serveDinner: false,
       agreedToTerms: false,
       signatureDate: new Date().toISOString().split('T')[0],
+      signatureData: '',
     })
     setStep('form')
   }
@@ -386,6 +391,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       // Agreement
       agreedToTerms: formData.agreedToTerms,
       signatureDate: new Date(formData.signatureDate),
+      signatureData: formData.signatureData,
       
       // System Fields - defaults for new guests, preserve for existing
       loyaltyTier: selectedGuest?.loyaltyTier || 'bronze',
@@ -1081,7 +1087,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
           </Label>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <div className="space-y-2">
             <Label htmlFor="signatureDate">Date</Label>
             <Input
@@ -1091,12 +1097,11 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
               onChange={(e) => updateForm('signatureDate', e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label>Digital Signature</Label>
-            <div className="h-10 border border-dashed rounded-md flex items-center justify-center text-sm text-muted-foreground">
-              Click to sign
-            </div>
-          </div>
+          <SignaturePad
+            value={formData.signatureData}
+            onChange={(signatureData) => updateForm('signatureData', signatureData)}
+            label="Digital Signature"
+          />
         </div>
       </div>
 
