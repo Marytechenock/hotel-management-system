@@ -513,12 +513,12 @@ export default function DashboardPage() {
                   </div>
                   <Badge 
                     variant={
-                      guest.loyaltyTier === 'platinum' ? 'default' :
-                      guest.loyaltyTier === 'gold' ? 'secondary' : 'outline'
+                      guest.loyaltyTier?.id === 'platinum' ? 'default' :
+                      guest.loyaltyTier?.id === 'gold' ? 'secondary' : 'outline'
                     }
                     className="text-xs capitalize"
                   >
-                    {guest.loyaltyTier || 'standard'}
+                    {guest.loyaltyTier?.name || 'standard'}
                   </Badge>
                 </div>
               ))}
