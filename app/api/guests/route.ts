@@ -104,6 +104,7 @@ export async function POST(req: Request) {
         serveDinner: parsed.data.serveDinner,
         agreedToTerms: parsed.data.agreedToTerms,
         signatureDate: parsed.data.signatureDate,
+        signatureData: parsed.data.signatureData,
         createdAt: parsed.data.createdAt ?? now,
         updatedAt: parsed.data.updatedAt ?? now,
       },

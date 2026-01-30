@@ -80,6 +80,7 @@ export const guestCreateSchema = z.object({
 
   agreedToTerms: z.boolean(),
   signatureDate: z.coerce.date(),
+  signatureData: z.string().optional(),
 
   loyaltyTier: loyaltyTierSchema.default('bronze'),
   loyaltyPoints: z.number().int().nonnegative().default(0),
@@ -92,7 +93,50 @@ export const guestCreateSchema = z.object({
   updatedAt: z.coerce.date().optional(),
 })
 
-export const guestUpdateSchema = guestCreateSchema.partial().omit({ id: true })
+export const guestUpdateSchema = z.object({
+  title: z.string().min(1).optional(),
+  surname: z.string().min(1).optional(),
+  firstName: z.string().min(1).optional(),
+  nationality: z.string().min(1).optional(),
+  idPassportNumber: z.string().min(1).optional(),
+
+  numberOfAdults: z.number().int().min(1).optional(),
+  numberOfChildren: z.number().int().min(0).optional(),
+  childrenAges: z.array(z.number().int().min(0)).optional(),
+  otherAdult: guestOtherAdultSchema.optional(),
+
+  postalAddress: z.string().optional(),
+  residentialAddress: z.string().min(1).optional(),
+  city: z.string().min(1).optional(),
+  stateProvince: z.string().min(1).optional(),
+  country: z.string().min(1).optional(),
+
+  telHome: z.string().optional(),
+  telBusiness: z.string().optional(),
+  cellphone: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+
+  dateIn: z.coerce.date().optional(),
+  dateOut: z.coerce.date().optional(),
+  roomNumber: z.string().min(1).optional(),
+  accountPayableBy: z.string().min(1).optional(),
+  vehicleRegNo: z.string().optional(),
+  breakfastTime: z.string().optional(),
+
+  preferences: guestPreferencesSchema.optional(),
+  serveDinner: z.boolean().optional(),
+
+  agreedToTerms: z.boolean().optional(),
+  signatureDate: z.coerce.date().optional(),
+  signatureData: z.string().optional(),
+
+  loyaltyTier: loyaltyTierSchema.optional(),
+  loyaltyPoints: z.number().int().nonnegative().optional(),
+  totalStays: z.number().int().nonnegative().optional(),
+  totalSpent: z.number().nonnegative().optional(),
+  notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+})
 
 export const roomCreateSchema = z.object({
   id: z.string().min(1).optional(),

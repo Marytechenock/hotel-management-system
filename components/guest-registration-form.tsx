@@ -394,7 +394,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       signatureData: formData.signatureData,
       
       // System Fields - defaults for new guests, preserve for existing
-      loyaltyTier: selectedGuest?.loyaltyTier || 'bronze',
+      loyaltyTierId: selectedGuest?.loyaltyTier?.id || 'bronze',
       loyaltyPoints: selectedGuest?.loyaltyPoints || 0,
       totalStays: selectedGuest ? 
         // For existing guests, increment stays if this is a new booking (different dates)
@@ -404,7 +404,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
           : selectedGuest.totalStays
         : 1, // New guest starts with 1 stay
       totalSpent: selectedGuest?.totalSpent || 0,
-      notes: selectedGuest?.notes,
+      notes: selectedGuest?.notes || '',
       tags: selectedGuest?.tags || [],
     }
     
@@ -510,7 +510,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
                         </div>
                       </div>
                       <div className="text-right">
-                        <Badge variant="outline" className="capitalize">{guest.loyaltyTier}</Badge>
+                        <Badge variant="outline" className="capitalize">{guest.loyaltyTier?.name || 'standard'}</Badge>
                         <p className="text-xs text-muted-foreground mt-1">{guest.totalStays} stays</p>
                       </div>
                     </div>
@@ -546,7 +546,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
               <div>
                 <p className="font-medium">Returning Guest Recognized</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedGuest.title} {selectedGuest.firstName} {selectedGuest.surname} - {selectedGuest.loyaltyTier} member with {selectedGuest.totalStays} previous stays
+                  {selectedGuest.title} {selectedGuest.firstName} {selectedGuest.surname} - {selectedGuest.loyaltyTier?.name || 'standard'} member with {selectedGuest.totalStays} previous stays
                 </p>
               </div>
             </div>
