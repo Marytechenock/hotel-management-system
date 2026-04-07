@@ -1,4 +1,4 @@
-import type { Guest, LoyaltyTier, LoyaltyConfiguration } from './types'
+import type { Guest, LoyaltyTierConfig, LoyaltyConfiguration } from './types'
 
 // Default loyalty configuration
 export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
@@ -6,6 +6,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
   tiers: [
     {
       id: 'bronze',
+      tier: 'bronze',
       name: 'Bronze',
       level: 1,
       minStays: 0,
@@ -27,6 +28,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
     },
     {
       id: 'silver',
+      tier: 'silver',
       name: 'Silver',
       level: 2,
       minStays: 5,
@@ -62,6 +64,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
     },
     {
       id: 'gold',
+      tier: 'gold',
       name: 'Gold',
       level: 3,
       minStays: 15,
@@ -104,6 +107,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
     },
     {
       id: 'platinum',
+      tier: 'platinum',
       name: 'Platinum',
       level: 4,
       minStays: 30,
@@ -164,7 +168,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfiguration = {
 
 // Loyalty service functions
 export class LoyaltyService {
-  static calculateLoyaltyTier(guest: Guest, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): LoyaltyTier | null {
+  static calculateLoyaltyTier(guest: Guest, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): LoyaltyTierConfig | null {
     if (!config.isActive) return null
 
     // Sort tiers by level (highest first)
@@ -187,42 +191,42 @@ export class LoyaltyService {
 
   static calculatePointsEarned(
     amount: number,
-    tier: LoyaltyTier | null,
+    tier: LoyaltyTierConfig | null,
     config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG
   ): number {
     if (!config.isActive) return 0
 
     const basePoints = Math.floor(amount * config.pointsPerDollar)
     const multiplier = tier?.pointsMultiplier || 1.0
-    
+
     return Math.floor(basePoints * multiplier)
   }
 
   static calculateStayPoints(
-    tier: LoyaltyTier | null,
+    tier: LoyaltyTierConfig | null,
     config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG
   ): number {
     if (!config.isActive) return 0
 
     const basePoints = config.pointsPerStay
     const multiplier = tier?.pointsMultiplier || 1.0
-    
+
     return Math.floor(basePoints * multiplier)
   }
 
-  static getTierColor(tier: LoyaltyTier | null): string {
+  static getTierColor(tier: LoyaltyTierConfig | null): string {
     return tier?.color || '#94a3b8' // Default slate color
   }
 
-  static getTierIcon(tier: LoyaltyTier | null): string {
+  static getTierIcon(tier: LoyaltyTierConfig | null): string {
     return tier?.icon || 'user'
   }
 
-  static formatTierName(tier: LoyaltyTier | null): string {
+  static formatTierName(tier: LoyaltyTierConfig | null): string {
     return tier?.name || 'Standard'
   }
 
-  static getTierBadgeClass(tier: LoyaltyTier | null): string {
+  static getTierBadgeClass(tier: LoyaltyTierConfig | null): string {
     const color = this.getTierColor(tier)
     return `border-2 px-2 py-1 text-xs font-medium rounded-full` +
            ` bg-white dark:bg-gray-800` +
@@ -231,8 +235,8 @@ export class LoyaltyService {
   }
 
   static getNextTierProgress(guest: Guest, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): {
-    currentTier: LoyaltyTier | null
-    nextTier: LoyaltyTier | null
+    currentTier: LoyaltyTierConfig | null
+    nextTier: LoyaltyTierConfig | null
     progress: {
       stays: number
       spent: number
@@ -246,7 +250,7 @@ export class LoyaltyService {
   } {
     const currentTier = this.calculateLoyaltyTier(guest, config)
     const sortedTiers = [...config.tiers].sort((a, b) => a.level - b.level)
-    
+
     const currentIndex = sortedTiers.findIndex(t => t.id === currentTier?.id)
     const nextTier = currentIndex < sortedTiers.length - 1 ? sortedTiers[currentIndex + 1] : null
 
@@ -285,13 +289,13 @@ export class LoyaltyService {
 
   static shouldUpgradeTier(guest: Guest, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): boolean {
     const newTier = this.calculateLoyaltyTier(guest, config)
-    return newTier && newTier.id !== guest.loyaltyTierId
+    return newTier != null && newTier.tier !== guest.loyaltyTier
   }
 
-  static getWelcomeBonusPoints(tier: LoyaltyTier | null, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): number {
+  static getWelcomeBonusPoints(tier: LoyaltyTierConfig | null, config: LoyaltyConfiguration = DEFAULT_LOYALTY_CONFIG): number {
     if (!config.isActive) return 0
-    
-    const welcomeBenefit = tier?.benefits.find(b => b.type === 'bonus' && b.name.includes('Welcome'))
+
+    const welcomeBenefit = tier?.benefits.find((b) => b.type === 'bonus' && b.name.includes('Welcome'))
     return welcomeBenefit?.value || config.welcomeBonusPoints
   }
 }

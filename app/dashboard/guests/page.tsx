@@ -69,6 +69,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
 import { LoyaltyService, DEFAULT_LOYALTY_CONFIG } from '@/lib/loyalty'
 import type { Guest, LoyaltyTier } from '@/lib/types'
+import { getLoyaltyTierConfig } from '@/lib/types'
 import { GuestRegistrationForm } from '@/components/guest-registration-form'
 import { format } from 'date-fns'
 
@@ -127,11 +128,6 @@ export default function GuestsPage() {
     fetchGuests()
   }, [])
 
-  // Debug: Log guests state to see what's happening
-  useEffect(() => {
-    console.log('Guests state:', guests, 'Type:', typeof guests, 'Is array?', Array.isArray(guests))
-  }, [guests])
-
   const filteredGuests = useMemo(() => {
     // Ensure guests is an array before proceeding
     if (!Array.isArray(guests)) {
@@ -163,7 +159,7 @@ export default function GuestsPage() {
     if (loyaltyFilter !== 'all') {
       result = result.filter(g => {
         if (!g || typeof g !== 'object') return false
-        return g.loyaltyTier?.id === loyaltyFilter
+        return g.loyaltyTier === loyaltyFilter
       })
     }
     
@@ -259,8 +255,8 @@ export default function GuestsPage() {
     
     return {
       total: guests.length,
-      platinum: guests.filter(g => g.loyaltyTier?.id === 'platinum').length,
-      gold: guests.filter(g => g.loyaltyTier?.id === 'gold').length,
+      platinum: guests.filter(g => g.loyaltyTier === 'platinum').length,
+      gold: guests.filter(g => g.loyaltyTier === 'gold').length,
       newThisMonth: guests.filter(g => {
         if (!g || !g.createdAt) return false
         try {
@@ -395,7 +391,7 @@ export default function GuestsPage() {
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                      {guest.firstName[0]}{guest.surname[0]}
+                      {guest.firstName?.[0] ?? '?'}{guest.surname?.[0] ?? '?'}
                     </div>
                     <div>
                       <p className="font-medium">{guest.title} {guest.firstName} {guest.surname}</p>
@@ -425,27 +421,17 @@ export default function GuestsPage() {
                 </TableCell>
                 <TableCell>
                   {(() => {
-                    const tier = guest.loyaltyTier
-                    if (!tier) {
-                      return (
-                        <div>
-                          <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200">
-                            <span className="capitalize">Standard</span>
-                          </Badge>
-                          <p className="text-xs text-muted-foreground mt-1">{guest.loyaltyPoints.toLocaleString()} pts</p>
-                        </div>
-                      )
-                    }
+                    const tierConfig = getLoyaltyTierConfig(guest.loyaltyTier ?? 'bronze')
                     return (
                       <div>
                         <Badge variant="outline" style={{
-                          backgroundColor: `${tier.color}20`,
-                          color: tier.color,
-                          borderColor: tier.color
+                          backgroundColor: `${tierConfig.color}20`,
+                          color: tierConfig.color,
+                          borderColor: tierConfig.color
                         }}>
-                          {tier.id === 'platinum' && <Crown className="mr-1 size-3" />}
-                          {tier.id === 'gold' && <Star className="mr-1 size-3" />}
-                          <span className="capitalize">{tier.name}</span>
+                          {tierConfig.id === 'platinum' && <Crown className="mr-1 size-3" />}
+                          {tierConfig.id === 'gold' && <Star className="mr-1 size-3" />}
+                          <span className="capitalize">{tierConfig.name}</span>
                         </Badge>
                         <p className="text-xs text-muted-foreground mt-1">{guest.loyaltyPoints.toLocaleString()} pts</p>
                       </div>
@@ -585,29 +571,22 @@ function GuestDetailView({ guest }: { guest: Guest }) {
       {/* Header */}
       <div className="flex items-center gap-4">
         <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-xl font-semibold text-primary">
-          {guest.firstName[0]}{guest.surname[0]}
+          {guest.firstName?.[0] ?? '?'}{guest.surname?.[0] ?? '?'}
         </div>
         <div>
           <h3 className="text-xl font-semibold">{guest.title} {guest.firstName} {guest.surname}</h3>
           <p className="text-muted-foreground">{guest.nationality}</p>
           <div className="flex items-center gap-2 mt-1">
             {(() => {
-              const tier = guest.loyaltyTier
-              if (!tier) {
-                return (
-                  <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200">
-                    <span className="capitalize">Standard</span>
-                  </Badge>
-                )
-              }
+              const tierConfig = getLoyaltyTierConfig(guest.loyaltyTier ?? 'bronze')
               return (
                 <Badge variant="outline" style={{
-                  backgroundColor: `${tier.color}20`,
-                  color: tier.color,
-                  borderColor: tier.color
+                  backgroundColor: `${tierConfig.color}20`,
+                  color: tierConfig.color,
+                  borderColor: tierConfig.color
                 }}>
-                  {tier.id === 'platinum' && <Crown className="mr-1 size-3" />}
-                  <span className="capitalize">{tier.name}</span>
+                  {tierConfig.id === 'platinum' && <Crown className="mr-1 size-3" />}
+                  <span className="capitalize">{tierConfig.name}</span>
                 </Badge>
               )
             })()}

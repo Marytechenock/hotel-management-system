@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { parsePagination } from '@/lib/server/pagination'
 import { roomCreateSchema } from '@/lib/server/schemas'
@@ -15,10 +16,10 @@ export async function GET(req: Request) {
   const type = url.searchParams.get('type')?.trim()
   const q = url.searchParams.get('q')?.trim()
 
-  const where: any = {}
+  const where: Prisma.RoomWhereInput = {}
   if (propertyId) where.propertyId = propertyId
-  if (status && status !== 'all') where.status = status
-  if (type && type !== 'all') where.type = type
+  if (status && status !== 'all') where.status = status as Prisma.EnumRoomStatusFilter
+  if (type && type !== 'all') where.type = type as Prisma.EnumRoomTypeFilter
   if (q) where.number = { contains: q, mode: 'insensitive' }
 
   const [total, data] = await Promise.all([

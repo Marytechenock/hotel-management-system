@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { parsePagination } from '@/lib/server/pagination'
 import { bookingCreateSchema } from '@/lib/server/schemas'
@@ -20,10 +21,10 @@ export async function GET(req: Request) {
   const source = url.searchParams.get('source')?.trim()
   const q = url.searchParams.get('q')?.trim()
 
-  const where: any = {}
+  const where: Prisma.BookingWhereInput = {}
   if (propertyId) where.propertyId = propertyId
-  if (status && status !== 'all') where.status = status
-  if (source && source !== 'all') where.source = source === 'booking.com' ? 'booking_com' : source
+  if (status && status !== 'all') where.status = status as Prisma.EnumBookingStatusFilter
+  if (source && source !== 'all') where.source = (source === 'booking.com' ? 'booking_com' : source) as Prisma.EnumBookingSourceFilter
 
   if (q) {
     where.guest = {

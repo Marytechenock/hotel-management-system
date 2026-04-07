@@ -12,10 +12,6 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   return NextResponse.json(guest)
 }
 
-//Fetch Guests
-
-
-
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
@@ -23,16 +19,12 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   let payload: unknown
   try {
     payload = await req.json()
-    console.log('PATCH payload:', payload)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
   const parsed = guestUpdateSchema.safeParse(payload)
-  console.log('Parsed result:', parsed)
-  
   if (!parsed.success) {
-    console.log('Validation error:', parsed.error)
     return NextResponse.json({ error: formatZodError(parsed.error) }, { status: 400 })
   }
 

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { parsePagination } from '@/lib/server/pagination'
 import { guestCreateSchema } from '@/lib/server/schemas'
 import { formatZodError } from '@/lib/server/errors'
-import { LoyaltyService, DEFAULT_LOYALTY_CONFIG } from '@/lib/loyalty'
 
 export const runtime = 'nodejs'
 
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const q = url.searchParams.get('q')?.trim()
   const loyaltyTier = url.searchParams.get('loyaltyTier')?.trim()
 
-  const where: any = {}
+  const where: Prisma.GuestWhereInput = {}
 
   if (q) {
     where.OR = [
@@ -26,8 +26,9 @@ export async function GET(req: Request) {
     ]
   }
 
-  if (loyaltyTier && loyaltyTier !== 'all') {
-    where.loyaltyTier = loyaltyTier
+  const validTiers = ['bronze', 'silver', 'gold', 'platinum']
+  if (loyaltyTier && loyaltyTier !== 'all' && validTiers.includes(loyaltyTier)) {
+    where.loyaltyTier = loyaltyTier as Prisma.EnumLoyaltyTierFilter
   }
 
   const [total, data] = await Promise.all([
@@ -35,32 +36,19 @@ export async function GET(req: Request) {
     prisma.guest.findMany({ where, orderBy: { updatedAt: 'desc' }, skip, take: limit }),
   ])
 
-  // Calculate loyalty tiers for each guest
-  const guestsWithLoyalty = data.map(guest => {
-    const calculatedTier = LoyaltyService.calculateLoyaltyTier(guest as any, DEFAULT_LOYALTY_CONFIG)
-    return {
-      ...guest,
-      loyaltyTier: calculatedTier
-    }
-  })
-
-  return NextResponse.json({ data: guestsWithLoyalty, page, limit, total })
+  return NextResponse.json({ data, page, limit, total })
 }
 
 export async function POST(req: Request) {
-  console.log('POST /api/guests called');
   let payload: unknown
   try {
     payload = await req.json()
-    console.log('Payload:', payload);
   } catch {
-    console.log('Invalid JSON body');
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
   const parsed = guestCreateSchema.safeParse(payload)
   if (!parsed.success) {
-    console.log('Validation failed');
     return NextResponse.json({ error: formatZodError(parsed.error) }, { status: 400 })
   }
 

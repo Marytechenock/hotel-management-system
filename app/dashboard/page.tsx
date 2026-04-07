@@ -18,6 +18,7 @@ import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
 import type { Booking, Room, Guest } from '@/lib/types'
+import { getLoyaltyTierConfig } from '@/lib/types'
 import {
   ChartConfig,
   ChartContainer,
@@ -70,6 +71,9 @@ export default function DashboardPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
@@ -115,7 +119,12 @@ export default function DashboardPage() {
 
   // Calculate dashboard metrics from real data
   const dashboardMetrics = useMemo(() => {
-    const propertyBookings = currentProperty 
+    if (!mounted) return {
+      occupancyRate: 0, revenue: 0, averageRate: 0, guestsInHouse: 0,
+      arrivalsToday: 0, departuresToday: 0, pendingCheckIns: 0, pendingCheckOuts: 0,
+      availableRooms: 0, occupancyChange: 0, revenueChange: 0, averageRateChange: 0,
+    }
+    const propertyBookings = currentProperty
       ? bookings.filter(b => b.propertyId === currentProperty.id)
       : bookings
 
@@ -183,10 +192,11 @@ export default function DashboardPage() {
       revenueChange: 0, // TODO: Calculate historical comparison
       averageRateChange: 0, // TODO: Calculate historical comparison
     }
-  }, [bookings, rooms, currentProperty])
+  }, [bookings, rooms, currentProperty, mounted])
 
   // Generate occupancy trend data for last 7 days
   const occupancyData = useMemo(() => {
+    if (!mounted) return []
     const data = []
     const today = new Date()
     
@@ -227,7 +237,7 @@ export default function DashboardPage() {
     }
     
     return data
-  }, [bookings, rooms, currentProperty])
+  }, [bookings, rooms, currentProperty, mounted])
 
   // Calculate revenue by source
   const revenueBySource = useMemo(() => {
@@ -511,14 +521,14 @@ export default function DashboardPage() {
                       <p className="text-xs text-muted-foreground">{guest.email}</p>
                     </div>
                   </div>
-                  <Badge 
+                  <Badge
                     variant={
-                      guest.loyaltyTier?.id === 'platinum' ? 'default' :
-                      guest.loyaltyTier?.id === 'gold' ? 'secondary' : 'outline'
+                      guest.loyaltyTier === 'platinum' ? 'default' :
+                      guest.loyaltyTier === 'gold' ? 'secondary' : 'outline'
                     }
                     className="text-xs capitalize"
                   >
-                    {guest.loyaltyTier?.name || 'standard'}
+                    {getLoyaltyTierConfig(guest.loyaltyTier)?.name ?? 'Standard'}
                   </Badge>
                 </div>
               ))}

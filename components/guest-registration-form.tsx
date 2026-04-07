@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/card'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { Guest } from '@/lib/types'
+import { getLoyaltyTierConfig } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
 
 interface Room {
@@ -107,7 +108,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
         // Party Info
         numberOfAdults: guest.numberOfAdults || 1,
         numberOfChildren: guest.numberOfChildren || 0,
-        childrenAges: guest.childrenAges?.map(String) || [],
+        childrenAges: Array.isArray(guest.childrenAges) ? guest.childrenAges.map(String) : [],
         
         // Other Adult
         otherAdultSurname: guest.otherAdult?.surname || '',
@@ -137,11 +138,11 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
         breakfastTime: guest.breakfastTime || '',
         
         // Food Preferences
-        beefYes: guest.preferences?.beef || false,
-        beefNo: !guest.preferences?.beef,
-        porkYes: guest.preferences?.pork || false,
-        porkNo: !guest.preferences?.pork,
-        eggStyle: guest.preferences?.eggStyle || '',
+        beefYes: guest.preferences?.beef ?? false,
+        beefNo: !(guest.preferences?.beef ?? false),
+        porkYes: guest.preferences?.pork ?? false,
+        porkNo: !(guest.preferences?.pork ?? false),
+        eggStyle: guest.preferences?.eggStyle ?? '',
         serveDinner: guest.serveDinner || false,
         
         // Agreement
@@ -226,16 +227,12 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
 
   const searchGuests = async (query: string) => {
     try {
-      const response = await axios.get('/api/guests', { params: { query } })
-      return response.data
+      const response = await axios.get('/api/guests', { params: { q: query } })
+      return response.data?.data ?? response.data ?? []
     } catch (error) {
       console.error(error)
       return []
     }
-  }
-
-  const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(event.target.value)
   }
 
   // Pre-populate form when guest is selected
@@ -249,7 +246,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       idPassportNumber: guest.idPassportNumber,
       numberOfAdults: guest.numberOfAdults,
       numberOfChildren: guest.numberOfChildren,
-      childrenAges: guest.childrenAges.map(String),
+      childrenAges: Array.isArray(guest.childrenAges) ? guest.childrenAges.map(String) : [],
       otherAdultSurname: guest.otherAdult?.surname || '',
       otherAdultFirstName: guest.otherAdult?.firstName || '',
       otherAdultNationality: guest.otherAdult?.nationality || '',
@@ -269,11 +266,11 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       accountPayableBy: guest.accountPayableBy,
       vehicleRegNo: guest.vehicleRegNo,
       breakfastTime: guest.breakfastTime,
-      beefYes: guest.preferences.beef,
-      beefNo: !guest.preferences.beef,
-      porkYes: guest.preferences.pork,
-      porkNo: !guest.preferences.pork,
-      eggStyle: guest.preferences.eggStyle || '',
+      beefYes: guest.preferences?.beef ?? false,
+      beefNo: !(guest.preferences?.beef ?? false),
+      porkYes: guest.preferences?.pork ?? false,
+      porkNo: !(guest.preferences?.pork ?? false),
+      eggStyle: guest.preferences?.eggStyle ?? '',
       serveDinner: guest.serveDinner,
       agreedToTerms: false,
       signatureDate: new Date().toISOString().split('T')[0],
@@ -394,7 +391,8 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       signatureData: formData.signatureData,
       
       // System Fields - defaults for new guests, preserve for existing
-      loyaltyTierId: selectedGuest?.loyaltyTier?.id || 'bronze',
+      loyaltyTier: selectedGuest?.loyaltyTier || 'bronze',
+
       loyaltyPoints: selectedGuest?.loyaltyPoints || 0,
       totalStays: selectedGuest ? 
         // For existing guests, increment stays if this is a new booking (different dates)
@@ -408,18 +406,12 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
       tags: selectedGuest?.tags || [],
     }
     
-    console.log('[v0] Guest data being sent to API:', JSON.stringify(guestData, null, 2))
-    
     // Make API call
     try {
       if (selectedGuest?.id) {
-        // Update existing guest
         await axios.patch(`/api/guests/${selectedGuest.id}`, guestData)
-        console.log('[v0] Guest updated successfully')
       } else {
-        // Create new guest
         await axios.post('/api/guests', guestData)
-        console.log('[v0] Guest saved successfully')
       }
       
       // Call onSuccess callback if provided
@@ -510,7 +502,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
                         </div>
                       </div>
                       <div className="text-right">
-                        <Badge variant="outline" className="capitalize">{guest.loyaltyTier?.name || 'standard'}</Badge>
+                        <Badge variant="outline" className="capitalize">{getLoyaltyTierConfig(guest.loyaltyTier).name}</Badge>
                         <p className="text-xs text-muted-foreground mt-1">{guest.totalStays} stays</p>
                       </div>
                     </div>
@@ -546,7 +538,7 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
               <div>
                 <p className="font-medium">Returning Guest Recognized</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedGuest.title} {selectedGuest.firstName} {selectedGuest.surname} - {selectedGuest.loyaltyTier?.name || 'standard'} member with {selectedGuest.totalStays} previous stays
+                  {selectedGuest.title} {selectedGuest.firstName} {selectedGuest.surname} - {getLoyaltyTierConfig(selectedGuest.loyaltyTier).name} member with {selectedGuest.totalStays} previous stays
                 </p>
               </div>
             </div>

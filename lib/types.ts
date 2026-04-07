@@ -1,3 +1,73 @@
+// Import Prisma's LoyaltyTier type
+import { LoyaltyTier } from '@prisma/client'
+
+// Re-export for convenience
+export { LoyaltyTier } from '@prisma/client'
+
+// Helper functions for LoyaltyTier display properties
+export function getLoyaltyTierConfig(tier: LoyaltyTier): LoyaltyTierConfig {
+  const configs: Record<LoyaltyTier, LoyaltyTierConfig> = {
+    bronze: {
+      id: 'bronze',
+      tier: 'bronze',
+      name: 'Bronze',
+      level: 1,
+      minStays: 0,
+      minSpent: 0,
+      minPoints: 0,
+      benefits: [],
+      color: '#CD7F32',
+      pointsMultiplier: 1,
+      discountRate: 0,
+    },
+    silver: {
+      id: 'silver',
+      tier: 'silver',
+      name: 'Silver',
+      level: 2,
+      minStays: 5,
+      minSpent: 1000,
+      minPoints: 1000,
+      benefits: [],
+      color: '#C0C0C0',
+      pointsMultiplier: 1.2,
+      discountRate: 5,
+    },
+    gold: {
+      id: 'gold',
+      tier: 'gold',
+      name: 'Gold',
+      level: 3,
+      minStays: 10,
+      minSpent: 3000,
+      minPoints: 3000,
+      benefits: [],
+      color: '#FFD700',
+      pointsMultiplier: 1.5,
+      discountRate: 10,
+    },
+    platinum: {
+      id: 'platinum',
+      tier: 'platinum',
+      name: 'Platinum',
+      level: 4,
+      minStays: 25,
+      minSpent: 10000,
+      minPoints: 10000,
+      benefits: [],
+      color: '#E5E4E2',
+      pointsMultiplier: 2,
+      discountRate: 15,
+    },
+  }
+  return configs[tier]
+}
+
+export function getAllLoyaltyTiers(): LoyaltyTierConfig[] {
+  const tiers: LoyaltyTier[] = ['bronze', 'silver', 'gold', 'platinum']
+  return tiers.map(getLoyaltyTierConfig)
+}
+
 // Core Types for OmniHotel Pro
 
 export interface Property {
@@ -69,8 +139,7 @@ export interface Guest {
   signatureData?: string // Base64 encoded signature image
   
   // System Fields
-  loyaltyTierId?: string // Reference to LoyaltyTier.id
-  loyaltyTier?: LoyaltyTier // Populated from API
+  loyaltyTier: LoyaltyTier // Prisma enum type
   loyaltyPoints: number
   totalStays: number
   totalSpent: number
@@ -170,9 +239,10 @@ export interface RevenueBySource {
   percentage: number
 }
 
-// Configurable Loyalty Tier System
-export interface LoyaltyTier {
+// Configurable Loyalty Tier Configuration
+export interface LoyaltyTierConfig {
   id: string
+  tier: LoyaltyTier // Prisma enum
   name: string
   level: number // Higher number = higher tier
   minStays: number
@@ -196,7 +266,7 @@ export interface LoyaltyBenefit {
 export interface LoyaltyConfiguration {
   id: string
   propertyId?: string // undefined = global config
-  tiers: LoyaltyTier[]
+  tiers: LoyaltyTierConfig[]
   pointsPerDollar: number
   pointsPerStay: number
   welcomeBonusPoints: number

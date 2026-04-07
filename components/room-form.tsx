@@ -40,7 +40,7 @@ export function RoomForm({ onSubmit, onCancel, isSubmitting = false, room }: Roo
     baseRate: room?.baseRate || 100,
     status: room?.status || 'available' as RoomStatus,
     amenities: room?.amenities || [],
-    description: room?.description || '',
+    notes: room?.notes || '',
   })
 
   const [newAmenity, setNewAmenity] = useState('')
@@ -166,12 +166,12 @@ export function RoomForm({ onSubmit, onCancel, isSubmitting = false, room }: Roo
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="notes">Notes</Label>
         <Textarea
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-          placeholder="Room description..."
+          id="notes"
+          value={formData.notes}
+          onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+          placeholder="Room notes..."
           rows={3}
         />
       </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { bookingUpdateSchema } from '@/lib/server/schemas'
 import { formatZodError } from '@/lib/server/errors'
@@ -32,8 +33,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'checkOut must be after checkIn' }, { status: 400 })
   }
 
-  const data: any = { ...parsed.data, updatedAt: new Date() }
-  if (parsed.data.source) data.source = toDbBookingSource(parsed.data.source)
+  const { source: rawSource, ...rest } = parsed.data
+  const data: Prisma.BookingUpdateInput = { ...rest, updatedAt: new Date() }
+  if (rawSource) data.source = toDbBookingSource(rawSource)
 
   try {
     const updated = await prisma.booking.update({ where: { id }, data })
