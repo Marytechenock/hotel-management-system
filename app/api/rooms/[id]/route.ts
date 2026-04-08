@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { roomUpdateSchema } from '@/lib/server/schemas'
 import { formatZodError } from '@/lib/server/errors'
@@ -28,9 +29,22 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   }
 
   try {
-    const updated = await prisma.room.update({ where: { id }, data: parsed.data })
+    const updated = await prisma.room.update({
+      where: { id },
+      data: parsed.data
+    })
     return NextResponse.json(updated)
-  } catch {
+  } catch (error) {
+    console.error('Error updating room:', error)
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        return NextResponse.json({
+          error: 'Room number already exists'
+        }, { status: 409 })
+      }
+    }
+
     return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })
   }
 }
@@ -39,9 +53,24 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   const { id } = await context.params
 
   try {
+    // Check if room has active bookings before deleting
+    const activeBookings = await prisma.booking.count({
+      where: {
+        roomId: id,
+        status: { in: ['confirmed', 'checked_in'] }
+      }
+    })
+
+    if (activeBookings > 0) {
+      return NextResponse.json({
+        error: 'Cannot delete room with active bookings'
+      }, { status: 400 })
+    }
+
     await prisma.room.delete({ where: { id } })
     return NextResponse.json({ ok: true })
-  } catch {
+  } catch (error) {
+    console.error('Error deleting room:', error)
     return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 })
   }
 }
