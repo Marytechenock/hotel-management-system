@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'  // ← Added Next.js Image component
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Hotel, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'  // ← Hotel icon removed (no longer needed)
 import { useToast } from '@/hooks/use-toast'
 
 export default function LoginPage() {
@@ -35,42 +36,55 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-            <Card className="max-w-md w-full">
+        <div className="min-h-screen bg-gradient-to-br from-[#cac1b9]/10 to-gray-100 flex items-center justify-center p-4">
+            <Card className="max-w-md w-full border-0 shadow-xl bg-white">
                 <CardHeader className="text-center">
-                    <div className="flex justify-center mb-4">
-                        <div className="flex size-12 items-center justify-center rounded-lg bg-primary">
-                            <Hotel className="size-6 text-white" />
+                    {/* Logo Image - Replace '/logo.png' with your actual filename */}
+                    <div className="flex justify-center mb-0">
+                        <div className="relative w-27 h-27">
+                            <Image
+                                src="logo.png"  // ← Place your logo in public/logo.png
+                                alt="OmniHotel Pro Logo"
+                                fill
+                                className="object-contain"
+                                priority  // ← Loads logo immediately for better UX
+                            />
                         </div>
                     </div>
-                    <CardTitle className="text-2xl">Staff Login</CardTitle>
-                    <CardDescription>Access the hotel management dashboard</CardDescription>
+                    <CardTitle className="text-2xl text-black">Staff Login</CardTitle>
+                    <CardDescription className="text-gray-600">Access the hotel management dashboard</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
+                            <Label htmlFor="email" className="text-gray-700">Email</Label>
                             <Input
                                 id="email"
                                 type="email"
                                 placeholder="admin@omnihotel.com"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                className="border-gray-300 focus:border-[#cac1b9] focus:ring-[#cac1b9]"
                                 required
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
+                            <Label htmlFor="password" className="text-gray-700">Password</Label>
                             <Input
                                 id="password"
                                 type="password"
                                 placeholder="••••••••"
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                className="border-gray-300 focus:border-[#cac1b9] focus:ring-[#cac1b9]"
                                 required
                             />
                         </div>
-                        <Button type="submit" className="w-full" disabled={isLoading}>
+                        <Button
+                            type="submit"
+                            className="w-full bg-[#cac1b9] text-black hover:bg-[#cac1b9]/90 font-medium"
+                            disabled={isLoading}
+                        >
                             {isLoading ? (
                                 <>
                                     <Loader2 className="mr-2 size-4 animate-spin" />
@@ -82,8 +96,8 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="mt-6 text-center text-sm text-muted-foreground">
-                        <Link href="/" className="hover:text-primary">
+                    <div className="mt-6 text-center text-sm text-gray-600">
+                        <Link href="/" className="hover:text-[#cac1b9] transition-colors">
                             ← Back to Home
                         </Link>
                     </div>

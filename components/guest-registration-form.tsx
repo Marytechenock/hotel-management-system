@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Search, Check, Loader2, Plus, Minus } from 'lucide-react'
+import Image from 'next/image'  // ← Added Next.js Image component
 import axios from 'axios';
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -542,6 +543,18 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
   if (step === 'search') {
     return (
         <div className="space-y-4">
+          {/* Logo at top of search step */}
+          <div className="flex justify-center mb-4">
+            <div className="relative w-12 h-12">
+              <Image
+                  src="/logo.png"
+                  alt="OmniHotel Pro Logo"
+                  fill
+                  className="object-contain"
+              />
+            </div>
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -611,6 +624,18 @@ export function GuestRegistrationForm({ onClose, guest, onSuccess }: GuestRegist
 
   return (
       <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+        {/* Logo at top of form step */}
+        <div className="flex justify-center mb-4">
+          <div className="relative w-12 h-12">
+            <Image
+                src="/logo.png"
+                alt="OmniHotel Pro Logo"
+                fill
+                className="object-contain"
+            />
+          </div>
+        </div>
+
         {selectedGuest && (
             <Card className="bg-accent/30 border-accent">
               <CardContent className="p-4">
