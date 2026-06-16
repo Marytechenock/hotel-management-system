@@ -15,14 +15,12 @@ import {
   Eye,
   TrendingUp,
   Users,
-  DollarSign,
   Search,
   X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,14 +41,26 @@ import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
 import type { Property } from '@/lib/types'
 
+interface PropertyStats {
+  occupancyRate: number
+  totalRevenue: number
+  guestsInHouse: number
+  totalRooms: number
+  occupiedRooms: number
+  totalBookings: number
+  availableRooms: number
+}
+
 export default function PropertiesPage() {
   const { setCurrentProperty } = useAppStore()
   const [properties, setProperties] = useState<Property[]>([])
+  const [propertyStats, setPropertyStats] = useState<Record<string, PropertyStats>>({})
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({})
   const [searchQuery, setSearchQuery] = useState('')
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0 })
   const { toast } = useToast()
@@ -72,6 +82,11 @@ export default function PropertiesPage() {
       const data = await response.json()
       setProperties(data.data)
       setPagination({ ...pagination, total: data.total })
+
+      // Fetch stats for each property
+      data.data.forEach((property: Property) => {
+        fetchPropertyStats(property.id)
+      })
     } catch (error) {
       console.error('Error:', error)
       toast({
@@ -81,6 +96,97 @@ export default function PropertiesPage() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPropertyStats = async (propertyId: string) => {
+    setLoadingStats(prev => ({ ...prev, [propertyId]: true }))
+    try {
+      // Fetch bookings for this property
+      const bookingsUrl = new URL('/api/bookings', window.location.origin)
+      bookingsUrl.searchParams.set('propertyId', propertyId)
+      bookingsUrl.searchParams.set('limit', '1000')
+
+      const response = await fetch(bookingsUrl.toString())
+      if (!response.ok) throw new Error('Failed to fetch bookings')
+      const data = await response.json()
+
+      const bookings = data.data || []
+
+      // Fetch rooms for this property
+      const roomsUrl = new URL('/api/rooms', window.location.origin)
+      roomsUrl.searchParams.set('propertyId', propertyId)
+      roomsUrl.searchParams.set('limit', '1000')
+
+      const roomsResponse = await fetch(roomsUrl.toString())
+      if (!roomsResponse.ok) throw new Error('Failed to fetch rooms')
+      const roomsData = await roomsResponse.json()
+      const rooms = roomsData.data || []
+
+      // Calculate stats
+      const totalRooms = rooms.length
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      // Count occupied rooms (checked_in status for today)
+      const occupiedRooms = bookings.filter((b: any) => {
+        const checkIn = new Date(b.checkIn)
+        checkIn.setHours(0, 0, 0, 0)
+        const checkOut = new Date(b.checkOut)
+        checkOut.setHours(0, 0, 0, 0)
+        return b.status === 'checked_in' ||
+            (b.status === 'confirmed' && checkIn <= today && checkOut > today)
+      }).length
+
+      // Count active guests
+      const guestsInHouse = bookings.filter((b: any) => {
+        const checkIn = new Date(b.checkIn)
+        checkIn.setHours(0, 0, 0, 0)
+        const checkOut = new Date(b.checkOut)
+        checkOut.setHours(0, 0, 0, 0)
+        return (b.status === 'checked_in' || b.status === 'confirmed') &&
+            checkIn <= today && checkOut > today
+      }).reduce((sum: number, b: any) => sum + (b.adults || 0) + (b.children || 0), 0)
+
+      // Calculate occupancy rate
+      const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0
+
+      // Calculate total revenue (sum of all confirmed and checked_in bookings)
+      const totalRevenue = bookings
+          .filter((b: any) => b.status === 'confirmed' || b.status === 'checked_in' || b.status === 'checked_out')
+          .reduce((sum: number, b: any) => sum + (b.totalAmount || 0), 0)
+
+      const availableRooms = totalRooms - occupiedRooms
+
+      setPropertyStats(prev => ({
+        ...prev,
+        [propertyId]: {
+          occupancyRate,
+          totalRevenue,
+          guestsInHouse,
+          totalRooms,
+          occupiedRooms,
+          availableRooms,
+          totalBookings: bookings.length
+        }
+      }))
+    } catch (error) {
+      console.error(`Error fetching stats for property ${propertyId}:`, error)
+      // Set default stats on error
+      setPropertyStats(prev => ({
+        ...prev,
+        [propertyId]: {
+          occupancyRate: 0,
+          totalRevenue: 0,
+          guestsInHouse: 0,
+          totalRooms: 0,
+          occupiedRooms: 0,
+          availableRooms: 0,
+          totalBookings: 0
+        }
+      }))
+    } finally {
+      setLoadingStats(prev => ({ ...prev, [propertyId]: false }))
     }
   }
 
@@ -104,17 +210,6 @@ export default function PropertiesPage() {
         description: 'Failed to delete property',
         variant: 'destructive',
       })
-    }
-  }
-
-  const getPropertyStats = (propertyId: string) => {
-    // Calculate from actual data or fetch from API
-    return {
-      occupancyRate: 75,
-      totalRevenue: 50000,
-      guestsInHouse: 42,
-      totalRooms: 100,
-      occupiedRooms: 75
     }
   }
 
@@ -166,7 +261,16 @@ export default function PropertiesPage() {
         {/* Property Cards Grid */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {properties.map((property) => {
-            const stats = getPropertyStats(property.id)
+            const stats = propertyStats[property.id] || {
+              occupancyRate: 0,
+              totalRevenue: 0,
+              guestsInHouse: 0,
+              totalRooms: 0,
+              occupiedRooms: 0,
+              availableRooms: 0,
+              totalBookings: 0
+            }
+            const isLoadingStats = loadingStats[property.id]
 
             return (
                 <Card key={property.id} className="overflow-hidden">
@@ -217,61 +321,78 @@ export default function PropertiesPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Stats */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="text-center p-2 rounded-md bg-muted/50">
-                        <div className="flex items-center justify-center gap-1 text-lg font-bold">
-                          <TrendingUp className="size-4 text-success" />
-                          {stats.occupancyRate.toFixed(0)}%
+                    {isLoadingStats ? (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="animate-pulse text-sm text-muted-foreground">Loading stats...</div>
                         </div>
-                        <p className="text-xs text-muted-foreground">Occupancy</p>
-                      </div>
-                      <div className="text-center p-2 rounded-md bg-muted/50">
-                        <div className="flex items-center justify-center gap-1 text-lg font-bold">
-                          <Users className="size-4 text-primary" />
-                          {stats.guestsInHouse}
-                        </div>
-                        <p className="text-xs text-muted-foreground">Guests</p>
-                      </div>
-                      <div className="text-center p-2 rounded-md bg-muted/50">
-                        <div className="flex items-center justify-center gap-1 text-lg font-bold">
-                          <BedDouble className="size-4 text-accent" />
-                          {stats.totalRooms}
-                        </div>
-                        <p className="text-xs text-muted-foreground">Rooms</p>
-                      </div>
-                    </div>
+                    ) : (
+                        <>
+                          {/* Stats */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="text-center p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center justify-center gap-1 text-lg font-bold">
+                                <TrendingUp className="size-4 text-success" />
+                                {stats.occupancyRate.toFixed(0)}%
+                              </div>
+                              <p className="text-xs text-muted-foreground">Occupancy</p>
+                            </div>
+                            <div className="text-center p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center justify-center gap-1 text-lg font-bold">
+                                <Users className="size-4 text-primary" />
+                                {stats.guestsInHouse}
+                              </div>
+                              <p className="text-xs text-muted-foreground">Guests</p>
+                            </div>
+                            <div className="text-center p-2 rounded-md bg-muted/50">
+                              <div className="flex items-center justify-center gap-1 text-lg font-bold">
+                                <BedDouble className="size-4 text-accent" />
+                                {stats.totalRooms}
+                              </div>
+                              <p className="text-xs text-muted-foreground">Rooms</p>
+                            </div>
+                          </div>
 
-                    {/* Contact Info */}
-                    <div className="space-y-2 pt-2 border-t">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Phone className="size-3 text-muted-foreground" />
-                        <span>{property.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Mail className="size-3 text-muted-foreground" />
-                        <span className="truncate">{property.email}</span>
-                      </div>
-                    </div>
 
-                    {/* Quick Actions */}
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => setCurrentProperty(property)}
-                      >
-                        Switch to Property
-                      </Button>
-                      <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => { setSelectedProperty(property); setIsDetailOpen(true) }}
-                      >
-                        View Details
-                      </Button>
-                    </div>
+                          {/* Revenue */}
+                          <div className="flex items-center justify-between text-sm border-t pt-2">
+                            <span className="text-muted-foreground">Revenue</span>
+                            <span className="font-medium">
+                        ${stats.totalRevenue.toLocaleString()}
+                      </span>
+                          </div>
+
+                          {/* Contact Info */}
+                          <div className="space-y-2 pt-2 border-t">
+                            <div className="flex items-center gap-2 text-sm">
+                              <Phone className="size-3 text-muted-foreground" />
+                              <span>{property.phone}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Mail className="size-3 text-muted-foreground" />
+                              <span className="truncate">{property.email}</span>
+                            </div>
+                          </div>
+
+                          {/* Quick Actions */}
+                          <div className="flex gap-2 pt-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 bg-transparent"
+                                onClick={() => setCurrentProperty(property)}
+                            >
+                              Switch to Property
+                            </Button>
+                            <Button
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => { setSelectedProperty(property); setIsDetailOpen(true) }}
+                            >
+                              View Details
+                            </Button>
+                          </div>
+                        </>
+                    )}
                   </CardContent>
                 </Card>
             )
