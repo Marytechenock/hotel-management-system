@@ -1,4 +1,3 @@
-// app/dashboard/bookings/page.tsx (updated version)
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
@@ -69,7 +68,6 @@ import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
 import type { Booking, BookingStatus, BookingSource } from '@/lib/types'
 
-// Extended type for API response with included relations
 type BookingWithRelations = Booking & {
   guest?: {
     id: string
@@ -83,6 +81,7 @@ type BookingWithRelations = Booking & {
     number: string
     type: string
     floor: number
+    status: string
   }
   property?: {
     id: string
@@ -150,7 +149,6 @@ export default function BookingsPage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [pagination, setPagination] = useState({ page: 1, limit: ITEMS_PER_PAGE, total: 0 })
 
-  // Fetch bookings from API
   const fetchBookings = async () => {
     if (!currentProperty?.id) {
       setBookings([])
@@ -186,18 +184,15 @@ export default function BookingsPage() {
     }
   }
 
-  // Fetch bookings when dependencies change
   useEffect(() => {
     fetchBookings()
   }, [currentProperty?.id, statusFilter, sourceFilter, searchQuery, pagination.page])
 
-  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1)
     setPagination(prev => ({ ...prev, page: 1 }))
   }, [statusFilter, sourceFilter, searchQuery])
 
-  // Handle booking creation
   const handleCreateBooking = async (bookingData: Partial<Booking>) => {
     setIsCreating(true)
     try {
@@ -234,7 +229,6 @@ export default function BookingsPage() {
     }
   }
 
-  // Handle booking editing
   const handleEditBooking = async (bookingData: Partial<Booking>) => {
     if (!editingBooking) return
 
@@ -246,7 +240,10 @@ export default function BookingsPage() {
         body: JSON.stringify(bookingData),
       })
 
-      if (!response.ok) throw new Error('Failed to update booking')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update booking')
+      }
 
       toast({
         title: 'Booking updated',
@@ -260,7 +257,7 @@ export default function BookingsPage() {
       console.error('Error updating booking:', error)
       toast({
         title: 'Error',
-        description: 'Failed to update booking',
+        description: error instanceof Error ? error.message : 'Failed to update booking',
         variant: 'destructive',
       })
     } finally {
@@ -268,7 +265,6 @@ export default function BookingsPage() {
     }
   }
 
-  // Handle booking deletion
   const handleDeleteBooking = async () => {
     if (!selectedBooking) return
 
@@ -278,7 +274,10 @@ export default function BookingsPage() {
         method: 'DELETE',
       })
 
-      if (!response.ok) throw new Error('Failed to delete booking')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete booking')
+      }
 
       toast({
         title: 'Booking deleted',
@@ -292,7 +291,7 @@ export default function BookingsPage() {
       console.error('Error deleting booking:', error)
       toast({
         title: 'Error',
-        description: 'Failed to delete booking',
+        description: error instanceof Error ? error.message : 'Failed to delete booking',
         variant: 'destructive',
       })
     } finally {
@@ -300,7 +299,6 @@ export default function BookingsPage() {
     }
   }
 
-  // Handle booking status updates
   const updateBookingStatus = async (bookingId: string, newStatus: BookingStatus) => {
     setIsUpdating(true)
     try {
@@ -310,7 +308,16 @@ export default function BookingsPage() {
         body: JSON.stringify({ status: newStatus }),
       })
 
-      if (!response.ok) throw new Error('Failed to update booking status')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update booking status')
+      }
+
+      const updatedBooking = await response.json()
+
+      setBookings(prev => prev.map(b =>
+          b.id === bookingId ? updatedBooking : b
+      ))
 
       toast({
         title: 'Booking updated',
@@ -322,7 +329,7 @@ export default function BookingsPage() {
       console.error('Error updating booking status:', error)
       toast({
         title: 'Error',
-        description: 'Failed to update booking status',
+        description: error instanceof Error ? error.message : 'Failed to update booking status',
         variant: 'destructive',
       })
     } finally {
@@ -374,7 +381,6 @@ export default function BookingsPage() {
     return booking.room?.number || 'N/A'
   }
 
-  // Show no property selected state
   if (!currentProperty) {
     return (
         <div className="p-6">
@@ -401,13 +407,22 @@ export default function BookingsPage() {
               Manage reservations for {currentProperty?.name}
             </p>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-2 size-4" />
-            New Booking
-          </Button>
+          <div className="flex gap-2">
+            <Button
+                variant="outline"
+                onClick={fetchBookings}
+                disabled={isLoading}
+            >
+              <Loader2 className={`mr-2 size-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              New Booking
+            </Button>
+          </div>
         </div>
 
-        {/* Loading State */}
         {isLoading && bookings.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -415,7 +430,6 @@ export default function BookingsPage() {
             </div>
         ) : (
             <>
-              {/* Stats Cards */}
               <div className="grid gap-4 md:grid-cols-5 mb-6">
                 <Card>
                   <CardContent className="pt-4">
@@ -449,7 +463,6 @@ export default function BookingsPage() {
                 </Card>
               </div>
 
-              {/* Filters */}
               <Card className="mb-6">
                 <CardContent className="pt-6">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center">
@@ -493,7 +506,6 @@ export default function BookingsPage() {
                 </CardContent>
               </Card>
 
-              {/* Bookings Table */}
               <Card>
                 <Table>
                   <TableHeader>
@@ -532,6 +544,11 @@ export default function BookingsPage() {
                                         {booking.adults} adult{booking.adults > 1 ? 's' : ''}
                                         {booking.children > 0 ? `, ${booking.children} child${booking.children > 1 ? 'ren' : ''}` : ''}
                                       </p>
+                                      {booking.room && (
+                                          <p className="text-xs text-muted-foreground">
+                                            Room status: <span className="font-medium">{booking.room.status}</span>
+                                          </p>
+                                      )}
                                     </div>
                                   </div>
                                 </TableCell>
@@ -603,6 +620,17 @@ export default function BookingsPage() {
                                             Check Out
                                           </DropdownMenuItem>
                                       )}
+
+                                      {booking.status === 'confirmed' && (
+                                          <DropdownMenuItem
+                                              onClick={() => updateBookingStatus(booking.id, 'no_show')}
+                                              className="text-warning-foreground"
+                                          >
+                                            <Clock className="mr-2 size-4" />
+                                            Mark as No Show
+                                          </DropdownMenuItem>
+                                      )}
+
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem
                                           className="text-destructive"
@@ -624,7 +652,6 @@ export default function BookingsPage() {
                   </TableBody>
                 </Table>
 
-                {/* Pagination */}
                 {pagination.total > pagination.limit && (
                     <div className="flex items-center justify-between border-t px-4 py-4">
                       <p className="text-sm text-muted-foreground">
@@ -640,8 +667,8 @@ export default function BookingsPage() {
                           <ChevronLeft className="size-4" />
                         </Button>
                         <span className="text-sm">
-                    Page {pagination.page} of {Math.ceil(pagination.total / pagination.limit)}
-                  </span>
+                          Page {pagination.page} of {Math.ceil(pagination.total / pagination.limit)}
+                        </span>
                         <Button
                             variant="outline"
                             size="sm"
@@ -657,7 +684,6 @@ export default function BookingsPage() {
             </>
         )}
 
-        {/* Delete Confirmation Dialog */}
         <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -680,7 +706,6 @@ export default function BookingsPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Create Booking Dialog */}
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -697,7 +722,6 @@ export default function BookingsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Booking Dialog */}
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
           <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -718,7 +742,6 @@ export default function BookingsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* View Booking Dialog */}
         <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
           <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
             <DialogHeader>
