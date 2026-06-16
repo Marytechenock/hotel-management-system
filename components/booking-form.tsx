@@ -56,15 +56,15 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
   const [availableRooms, setAvailableRooms] = useState<any[]>([])
   const [availableGuests, setAvailableGuests] = useState<any[]>([])
   const [selectedRoomRate, setSelectedRoomRate] = useState<number>(0)
+  const [bookedRanges, setBookedRanges] = useState<{ from: Date; to: Date }[]>([])
+  const [isLoadingBookedDates, setIsLoadingBookedDates] = useState(false)
 
-  // Fetch available rooms and guests
   useEffect(() => {
     const fetchRooms = async () => {
       try {
         const params = new URLSearchParams()
         if (currentProperty?.id) params.append('propertyId', currentProperty.id)
         params.append('limit', '100')
-
         const response = await fetch(`/api/rooms?${params.toString()}`)
         const data = await response.json()
         setAvailableRooms(data.data || [])
@@ -78,7 +78,6 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
         const params = new URLSearchParams()
         if (currentProperty?.id) params.append('propertyId', currentProperty.id)
         params.append('limit', '100')
-
         const response = await fetch(`/api/guests?${params.toString()}`)
         const data = await response.json()
         setAvailableGuests(data.data || [])
@@ -91,7 +90,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
     fetchGuests()
   }, [currentProperty?.id])
 
-  // Update room rate when room is selected
+  // Update room rate when room changes
   useEffect(() => {
     if (formData.roomId) {
       const selectedRoom = availableRooms.find(r => r.id === formData.roomId)
@@ -102,8 +101,58 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
     }
   }, [formData.roomId, availableRooms])
 
+  // Fetch booked date ranges when room changes
+  useEffect(() => {
+    if (!formData.roomId) {
+      setBookedRanges([])
+      return
+    }
+
+    const fetchBookedRanges = async () => {
+      setIsLoadingBookedDates(true)
+      try {
+        const [confirmedRes, checkedInRes] = await Promise.all([
+          fetch(`/api/bookings?roomId=${formData.roomId}&status=confirmed&limit=200`),
+          fetch(`/api/bookings?roomId=${formData.roomId}&status=checked_in&limit=200`),
+        ])
+
+        const [confirmedData, checkedInData] = await Promise.all([
+          confirmedRes.json(),
+          checkedInRes.json(),
+        ])
+
+        console.log('confirmed bookings:', confirmedData)
+        console.log('checked_in bookings:', checkedInData)
+
+        const allBookings = [
+          ...(confirmedData.data || []),
+          ...(checkedInData.data || []),
+        ]
+
+        const ranges = allBookings
+            .filter((b: any) => !booking || b.id !== booking.id)
+            .map((b: any) => ({
+              from: new Date(b.checkIn),
+              to: new Date(b.checkOut),
+            }))
+
+        console.log('booked ranges:', ranges)
+        setBookedRanges(ranges)
+      } catch (error) {
+        console.error('Error fetching booked dates:', error)
+        setBookedRanges([])
+      } finally {
+        setIsLoadingBookedDates(false)
+      }
+    }
+
+    fetchBookedRanges()
+  }, [formData.roomId])
+
   const calculateTotal = (rate?: number) => {
-    const nights = Math.max(1, Math.ceil((formData.checkOut.getTime() - formData.checkIn.getTime()) / (1000 * 60 * 60 * 24)))
+    const nights = Math.max(1, Math.ceil(
+        (formData.checkOut.getTime() - formData.checkIn.getTime()) / (1000 * 60 * 60 * 24)
+    ))
     const roomRate = rate || selectedRoomRate || 100
     const total = roomRate * nights
     setFormData(prev => ({ ...prev, totalAmount: total }))
@@ -115,30 +164,31 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
     }
   }, [formData.checkIn, formData.checkOut, selectedRoomRate])
 
+  // Check if a date falls within any booked range using timestamps
+  const isDateBooked = (date: Date): boolean => {
+    const t = date.getTime()
+    return bookedRanges.some(({ from, to }) => t >= from.getTime() && t < to.getTime())
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-
-    // Validate required fields
-    if (!formData.guestId) {
-      alert('Please select a guest')
-      return
-    }
-    if (!formData.roomId) {
-      alert('Please select a room')
-      return
-    }
-    if (formData.checkOut <= formData.checkIn) {
-      alert('Check-out date must be after check-in date')
-      return
-    }
-
+    if (!formData.guestId) { alert('Please select a guest'); return }
+    if (!formData.roomId) { alert('Please select a room'); return }
+    if (formData.checkOut <= formData.checkIn) { alert('Check-out date must be after check-in date'); return }
     onSubmit(formData)
   }
 
-  const nights = Math.max(1, Math.ceil((formData.checkOut.getTime() - formData.checkIn.getTime()) / (1000 * 60 * 60 * 24)))
+  const nights = Math.max(1, Math.ceil(
+      (formData.checkOut.getTime() - formData.checkIn.getTime()) / (1000 * 60 * 60 * 24)
+  ))
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
   return (
       <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* Guest + Room */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="guestId">Guest *</Label>
@@ -161,6 +211,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="roomId">Room *</Label>
             <Select value={formData.roomId} onValueChange={(value) => setFormData(prev => ({ ...prev, roomId: value }))}>
@@ -184,6 +235,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
           </div>
         </div>
 
+        {/* Date pickers */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Check-in Date *</Label>
@@ -191,53 +243,108 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
               <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.checkIn && "text-muted-foreground"
-                    )}
+                    className={cn("w-full justify-start text-left font-normal", !formData.checkIn && "text-muted-foreground")}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {formData.checkIn ? format(formData.checkIn, "PPP") : "Pick a date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                    mode="single"
-                    selected={formData.checkIn}
-                    onSelect={(date) => date && setFormData(prev => ({ ...prev, checkIn: date }))}
-                    initialFocus
-                />
+              <PopoverContent className="w-auto p-0" align="start">
+                {isLoadingBookedDates ? (
+                    <div className="p-6 text-sm text-muted-foreground text-center">
+                      Loading availability...
+                    </div>
+                ) : (
+                    <>
+                      <Calendar
+                          mode="single"
+                          selected={formData.checkIn}
+                          onSelect={(date) => date && setFormData(prev => ({ ...prev, checkIn: date }))}
+                          disabled={(date) => {
+                            const d = new Date(date)
+                            d.setHours(0, 0, 0, 0)
+                            return d < today || isDateBooked(d)
+                          }}
+                          modifiers={{
+                            booked: (date) => {
+                              const d = new Date(date)
+                              d.setHours(0, 0, 0, 0)
+                              return isDateBooked(d)
+                            }
+                          }}
+                          modifiersClassNames={{
+                            booked: 'bg-red-50 text-red-400 line-through'
+                          }}
+                          initialFocus
+                      />
+                      {bookedRanges.length > 0 && (
+                          <div className="px-3 pb-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2">
+                            <span className="inline-block w-3 h-3 rounded-sm bg-red-50 border border-red-200" />
+                            Already booked
+                          </div>
+                      )}
+                    </>
+                )}
               </PopoverContent>
             </Popover>
           </div>
+
           <div className="space-y-2">
             <Label>Check-out Date *</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.checkOut && "text-muted-foreground"
-                    )}
+                    className={cn("w-full justify-start text-left font-normal", !formData.checkOut && "text-muted-foreground")}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {formData.checkOut ? format(formData.checkOut, "PPP") : "Pick a date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                    mode="single"
-                    selected={formData.checkOut}
-                    onSelect={(date) => date && setFormData(prev => ({ ...prev, checkOut: date }))}
-                    initialFocus
-                    disabled={(date) => date <= formData.checkIn}
-                />
+              <PopoverContent className="w-auto p-0" align="start">
+                {isLoadingBookedDates ? (
+                    <div className="p-6 text-sm text-muted-foreground text-center">
+                      Loading availability...
+                    </div>
+                ) : (
+                    <>
+                      <Calendar
+                          mode="single"
+                          selected={formData.checkOut}
+                          onSelect={(date) => date && setFormData(prev => ({ ...prev, checkOut: date }))}
+                          disabled={(date) => {
+                            const d = new Date(date)
+                            d.setHours(0, 0, 0, 0)
+                            const ci = new Date(formData.checkIn)
+                            ci.setHours(0, 0, 0, 0)
+                            return d <= ci || isDateBooked(d)
+                          }}
+                          modifiers={{
+                            booked: (date) => {
+                              const d = new Date(date)
+                              d.setHours(0, 0, 0, 0)
+                              return isDateBooked(d)
+                            }
+                          }}
+                          modifiersClassNames={{
+                            booked: 'bg-red-50 text-red-400 line-through'
+                          }}
+                          initialFocus
+                      />
+                      {bookedRanges.length > 0 && (
+                          <div className="px-3 pb-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2">
+                            <span className="inline-block w-3 h-3 rounded-sm bg-red-50 border border-red-200" />
+                            Already booked
+                          </div>
+                      )}
+                    </>
+                )}
               </PopoverContent>
             </Popover>
           </div>
         </div>
 
+        {/* Pricing summary */}
         <div className="bg-muted/30 p-3 rounded-md">
           <div className="flex justify-between text-sm">
             <span>Nights:</span>
@@ -253,6 +360,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
           </div>
         </div>
 
+        {/* Status + Source */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>
@@ -262,13 +370,12 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
               </SelectTrigger>
               <SelectContent>
                 {bookingStatuses.map((status) => (
-                    <SelectItem key={status.value} value={status.value}>
-                      {status.label}
-                    </SelectItem>
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="source">Source</Label>
             <Select value={formData.source} onValueChange={(value: BookingSource) => setFormData(prev => ({ ...prev, source: value }))}>
@@ -277,15 +384,14 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
               </SelectTrigger>
               <SelectContent>
                 {bookingSources.map((source) => (
-                    <SelectItem key={source.value} value={source.value}>
-                      {source.label}
-                    </SelectItem>
+                    <SelectItem key={source.value} value={source.value}>{source.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
+        {/* Adults + Children */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="adults">Adults *</Label>
@@ -312,6 +418,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
           </div>
         </div>
 
+        {/* Amounts */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="totalAmount">Total Amount ($) *</Label>
@@ -338,6 +445,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
           </div>
         </div>
 
+        {/* Special requests */}
         <div className="space-y-2">
           <Label htmlFor="specialRequests">Special Requests</Label>
           <Textarea

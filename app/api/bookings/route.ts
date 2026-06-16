@@ -21,9 +21,11 @@ export async function GET(req: Request) {
   const status = url.searchParams.get('status')?.trim()
   const source = url.searchParams.get('source')?.trim()
   const q = url.searchParams.get('q')?.trim()
+  const roomId = url.searchParams.get('roomId')?.trim()
 
   const where: Prisma.BookingWhereInput = {}
   if (propertyId) where.propertyId = propertyId
+  if (roomId) where.roomId = roomId
   if (status && status !== 'all') where.status = status as Prisma.EnumBookingStatusFilter
   if (source && source !== 'all') where.source = (source === 'booking.com' ? 'booking_com' : source) as Prisma.EnumBookingSourceFilter
 
