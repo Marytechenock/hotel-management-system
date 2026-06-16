@@ -1,4 +1,5 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +19,19 @@ interface BookingFormProps {
   onCancel: () => void
   isSubmitting?: boolean
   booking?: Booking
+}
+
+interface GuestDetails {
+  id: string
+  firstName: string
+  surname: string
+  email: string
+  cellphone?: string
+  roomNumber?: string
+  dateIn?: string | Date
+  dateOut?: string | Date
+  numberOfAdults?: number
+  numberOfChildren?: number
 }
 
 const bookingSources: { value: BookingSource; label: string }[] = [
@@ -58,6 +72,7 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
   const [selectedRoomRate, setSelectedRoomRate] = useState<number>(0)
   const [bookedRanges, setBookedRanges] = useState<{ from: Date; to: Date }[]>([])
   const [isLoadingBookedDates, setIsLoadingBookedDates] = useState(false)
+  const [selectedGuestInfo, setSelectedGuestInfo] = useState<GuestDetails | null>(null)
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -90,6 +105,47 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
     fetchGuests()
   }, [currentProperty?.id])
 
+  // Auto-populate when guest is selected
+  const handleGuestSelect = async (guestId: string) => {
+    setFormData(prev => ({ ...prev, guestId }))
+
+    if (!guestId) {
+      setSelectedGuestInfo(null)
+      return
+    }
+
+    try {
+      // Fetch full guest details
+      const response = await fetch(`/api/guests/${guestId}`)
+      if (!response.ok) throw new Error('Failed to fetch guest details')
+      const guest = await response.json()
+
+      setSelectedGuestInfo(guest)
+
+      // Find room ID from room number
+      let roomId = ''
+      if (guest.roomNumber) {
+        const room = availableRooms.find(r => r.number === guest.roomNumber)
+        if (room) {
+          roomId = room.id
+        }
+      }
+
+      // Auto-populate form fields
+      setFormData(prev => ({
+        ...prev,
+        guestId: guest.id,
+        roomId: roomId || prev.roomId,
+        checkIn: guest.dateIn ? new Date(guest.dateIn) : prev.checkIn,
+        checkOut: guest.dateOut ? new Date(guest.dateOut) : prev.checkOut,
+        adults: guest.numberOfAdults || prev.adults,
+        children: guest.numberOfChildren || prev.children,
+      }))
+    } catch (error) {
+      console.error('Error fetching guest details:', error)
+    }
+  }
+
   // Update room rate when room changes
   useEffect(() => {
     if (formData.roomId) {
@@ -121,9 +177,6 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
           checkedInRes.json(),
         ])
 
-        console.log('confirmed bookings:', confirmedData)
-        console.log('checked_in bookings:', checkedInData)
-
         const allBookings = [
           ...(confirmedData.data || []),
           ...(checkedInData.data || []),
@@ -136,7 +189,6 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
               to: new Date(b.checkOut),
             }))
 
-        console.log('booked ranges:', ranges)
         setBookedRanges(ranges)
       } catch (error) {
         console.error('Error fetching booked dates:', error)
@@ -164,7 +216,6 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
     }
   }, [formData.checkIn, formData.checkOut, selectedRoomRate])
 
-  // Check if a date falls within any booked range using timestamps
   const isDateBooked = (date: Date): boolean => {
     const t = date.getTime()
     return bookedRanges.some(({ from, to }) => t >= from.getTime() && t < to.getTime())
@@ -187,12 +238,11 @@ export function BookingForm({ onSubmit, onCancel, isSubmitting = false, booking 
 
   return (
       <form onSubmit={handleSubmit} className="space-y-4">
-
         {/* Guest + Room */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="guestId">Guest *</Label>
-            <Select value={formData.guestId} onValueChange={(value) => setFormData(prev => ({ ...prev, guestId: value }))}>
+            <Select value={formData.guestId} onValueChange={handleGuestSelect}>
               <SelectTrigger>
                 <SelectValue placeholder="Select guest" />
               </SelectTrigger>
