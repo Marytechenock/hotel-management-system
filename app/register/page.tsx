@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Check, Loader2, Plus, Minus } from 'lucide-react'  // ← Hotel icon removed
-import Image from 'next/image'  // ← Added Next.js Image component
+import { Check, Loader2, Plus, Minus, XCircle, CalendarIcon } from 'lucide-react'
+import Image from 'next/image'
 import axios from 'axios';
+import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { SignaturePad } from '@/components/signature-pad'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
     Select,
     SelectContent,
@@ -25,7 +28,7 @@ import {
     CardDescription,
 } from '@/components/ui/card'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import type { Guest } from '@/lib/types'
+import { cn } from '@/lib/utils'
 import { useAppStore } from '@/lib/store'
 import { useToast } from '@/hooks/use-toast'
 
@@ -60,8 +63,8 @@ interface FormData {
     telBusiness: string;
     cellphone: string;
     email: string;
-    dateIn: string;
-    dateOut: string;
+    dateIn: Date | undefined;
+    dateOut: Date | undefined;
     roomNumber: string;
     accountPayableBy: string;
     vehicleRegNo: string;
@@ -77,14 +80,62 @@ interface FormData {
     signatureData: string;
 }
 
+// Initial form data
+const initialFormData: FormData = {
+    title: '',
+    surname: '',
+    firstName: '',
+    nationality: '',
+    idPassportNumber: '',
+    numberOfAdults: 1,
+    numberOfChildren: 0,
+    childrenAges: [],
+    otherAdultSurname: '',
+    otherAdultFirstName: '',
+    otherAdultNationality: '',
+    otherAdultIdPassport: '',
+    postalAddress: '',
+    residentialAddress: '',
+    city: '',
+    stateProvince: '',
+    country: '',
+    telHome: '',
+    telBusiness: '',
+    cellphone: '',
+    email: '',
+    dateIn: undefined,
+    dateOut: undefined,
+    roomNumber: '',
+    accountPayableBy: 'Guest',
+    vehicleRegNo: '',
+    breakfastTime: '',
+    beefYes: false,
+    beefNo: false,
+    porkYes: false,
+    porkNo: false,
+    eggStyle: '',
+    serveDinner: false,
+    agreedToTerms: false,
+    signatureDate: new Date().toISOString().split('T')[0],
+    signatureData: '',
+}
+
 export default function GuestRegistrationPage() {
     const { toast } = useToast()
     const { currentProperty } = useAppStore()
     const [isSaving, setIsSaving] = useState(false)
 
-    // Add state for rooms
+    // State for rooms
     const [rooms, setRooms] = useState<Room[]>([])
     const [isLoadingRooms, setIsLoadingRooms] = useState(false)
+
+    // State for booked dates and conflict
+    const [bookedRanges, setBookedRanges] = useState<{ from: Date; to: Date }[]>([])
+    const [isLoadingBookedDates, setIsLoadingBookedDates] = useState(false)
+    const [dateConflict, setDateConflict] = useState(false)
+
+    // Form state - MOVED UP before any useEffect that uses it
+    const [formData, setFormData] = useState<FormData>(initialFormData)
 
     // Fetch rooms on component mount or when property changes
     useEffect(() => {
@@ -127,48 +178,76 @@ export default function GuestRegistrationPage() {
         });
     }, [currentProperty])
 
-    // Form state matching the physical registration form
-    const [formData, setFormData] = useState<FormData>({
-        title: '',
-        surname: '',
-        firstName: '',
-        nationality: '',
-        idPassportNumber: '',
-        numberOfAdults: 1,
-        numberOfChildren: 0,
-        childrenAges: [],
-        otherAdultSurname: '',
-        otherAdultFirstName: '',
-        otherAdultNationality: '',
-        otherAdultIdPassport: '',
-        postalAddress: '',
-        residentialAddress: '',
-        city: '',
-        stateProvince: '',
-        country: '',
-        telHome: '',
-        telBusiness: '',
-        cellphone: '',
-        email: '',
-        dateIn: new Date().toISOString().split('T')[0],
-        dateOut: '',
-        roomNumber: '',
-        accountPayableBy: 'Guest',
-        vehicleRegNo: '',
-        breakfastTime: '',
-        beefYes: false,
-        beefNo: false,
-        porkYes: false,
-        porkNo: false,
-        eggStyle: '',
-        serveDinner: false,
-        agreedToTerms: false,
-        signatureDate: new Date().toISOString().split('T')[0],
-        signatureData: '',
-    })
+    // Fetch booked dates when room is selected
+    useEffect(() => {
+        if (!formData.roomNumber) {
+            setBookedRanges([])
+            setDateConflict(false)
+            return
+        }
+        const selectedRoom = rooms.find(r => r.number === formData.roomNumber)
+        if (!selectedRoom) return
+
+        const fetchBooked = async () => {
+            setIsLoadingBookedDates(true)
+            try {
+                const [r1, r2] = await Promise.all([
+                    fetch(`/api/bookings?roomId=${selectedRoom.id}&status=confirmed&limit=200`),
+                    fetch(`/api/bookings?roomId=${selectedRoom.id}&status=checked_in&limit=200`),
+                ])
+                const [d1, d2] = await Promise.all([r1.json(), r2.json()])
+                const all = [...(d1.data || []), ...(d2.data || [])]
+                    .map((b: any) => ({ from: new Date(b.checkIn), to: new Date(b.checkOut) }))
+                setBookedRanges(all)
+            } catch (e) {
+                console.error('Error fetching booked dates:', e)
+                setBookedRanges([])
+            } finally {
+                setIsLoadingBookedDates(false)
+            }
+        }
+        fetchBooked()
+    }, [formData.roomNumber, rooms])
+
+    // Conflict detection - properly handles bookings that end on the check-in date
+    useEffect(() => {
+        if (!formData.dateIn || !formData.dateOut || bookedRanges.length === 0) {
+            setDateConflict(false)
+            return
+        }
+
+        const checkIn = new Date(formData.dateIn);
+        checkIn.setHours(0, 0, 0, 0);
+        const checkOut = new Date(formData.dateOut);
+        checkOut.setHours(0, 0, 0, 0);
+
+        // Check if there's any OVERLAP with existing bookings
+        const conflict = bookedRanges.some(({ from, to }) => {
+            const f = new Date(from).setHours(0, 0, 0, 0)
+            const tt = new Date(to).setHours(0, 0, 0, 0)
+            const ci = checkIn.getTime()
+            const co = checkOut.getTime()
+
+            // Overlap exists if: checkIn < existingCheckOut AND checkOut > existingCheckIn
+            // This correctly handles bookings that end on the check-in date (they don't conflict)
+            return ci < tt && co > f
+        })
+
+        setDateConflict(conflict)
+    }, [formData.dateIn, formData.dateOut, bookedRanges])
+
+    const isDateBooked = (date: Date): boolean => {
+        const t = date.setHours(0, 0, 0, 0)
+        return bookedRanges.some(({ from, to }) => {
+            const f = new Date(from).setHours(0, 0, 0, 0)
+            const tt = new Date(to).setHours(0, 0, 0, 0)
+            // A date is booked if it's >= check-in AND < check-out
+            return t >= f && t < tt
+        })
+    }
 
     const handleSave = async () => {
-        // Validation logic (unchanged)
+        // Validation logic
         if (!formData.firstName || !formData.surname) {
             toast({ title: 'Missing fields', description: 'First name and surname are required', variant: 'destructive' })
             return
@@ -210,10 +289,28 @@ export default function GuestRegistrationPage() {
             return
         }
 
-        const checkIn = new Date(formData.dateIn)
-        const checkOut = new Date(formData.dateOut)
-        if (checkOut <= checkIn) {
-            toast({ title: 'Invalid dates', description: 'Check-out date must be after check-in date', variant: 'destructive' })
+        // Enhanced date validation - checkout must be at least one day after checkin
+        if (formData.dateIn && formData.dateOut) {
+            const checkIn = new Date(formData.dateIn);
+            checkIn.setHours(0, 0, 0, 0);
+            const checkOut = new Date(formData.dateOut);
+            checkOut.setHours(0, 0, 0, 0);
+
+            const diffTime = checkOut.getTime() - checkIn.getTime();
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+            if (diffDays < 1) {
+                toast({
+                    title: 'Invalid dates',
+                    description: 'Check-out date must be at least one day after check-in date',
+                    variant: 'destructive'
+                });
+                return;
+            }
+        }
+
+        if (dateConflict) {
+            toast({ title: 'Date conflict', description: 'This room is already booked for the selected dates.', variant: 'destructive' })
             return
         }
         if (!formData.agreedToTerms) {
@@ -223,8 +320,7 @@ export default function GuestRegistrationPage() {
 
         setIsSaving(true)
 
-        const safeParseDate = (dateStr: string): Date => {
-            const date = new Date(dateStr)
+        const safeParseDate = (date: Date): Date => {
             return isNaN(date.getTime()) ? new Date() : date
         }
 
@@ -272,7 +368,7 @@ export default function GuestRegistrationPage() {
             },
             serveDinner: formData.serveDinner || false,
             agreedToTerms: formData.agreedToTerms,
-            signatureDate: safeParseDate(formData.signatureDate),
+            signatureDate: safeParseDate(new Date(formData.signatureDate)),
             signatureData: formData.signatureData || '',
             loyaltyTier: 'bronze',
             loyaltyPoints: 0,
@@ -286,18 +382,7 @@ export default function GuestRegistrationPage() {
             await axios.post('/api/guests', guestData)
             toast({ title: 'Guest registered', description: `${guestData.firstName} ${guestData.surname} has been registered.` })
             // Reset form
-            setFormData({
-                title: '', surname: '', firstName: '', nationality: '', idPassportNumber: '',
-                numberOfAdults: 1, numberOfChildren: 0, childrenAges: [],
-                otherAdultSurname: '', otherAdultFirstName: '', otherAdultNationality: '', otherAdultIdPassport: '',
-                postalAddress: '', residentialAddress: '', city: '', stateProvince: '', country: '',
-                telHome: '', telBusiness: '', cellphone: '', email: '',
-                dateIn: new Date().toISOString().split('T')[0], dateOut: '', roomNumber: '',
-                accountPayableBy: 'Guest', vehicleRegNo: '', breakfastTime: '',
-                beefYes: false, beefNo: false, porkYes: false, porkNo: false, eggStyle: '',
-                serveDinner: false, agreedToTerms: false,
-                signatureDate: new Date().toISOString().split('T')[0], signatureData: '',
-            })
+            setFormData(initialFormData)
         } catch (error: any) {
             console.error('Error saving guest:', error.response?.data)
             let errorMessage = 'Failed to save guest'
@@ -314,7 +399,7 @@ export default function GuestRegistrationPage() {
         }
     }
 
-    const updateForm = (field: keyof FormData, value: string | number | boolean | string[]) => {
+    const updateForm = (field: keyof FormData, value: string | number | boolean | string[] | Date | undefined) => {
         setFormData(prev => ({ ...prev, [field]: value }))
     }
 
@@ -336,16 +421,15 @@ export default function GuestRegistrationPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-[#cac1b9]/10 to-gray-100">
+        <div className="min-h-screen bg-linear-to-br from-[#cac1b9]/10 to-gray-100">
             {/* Professional Header */}
             <header className="bg-black border-b border-[#cac1b9]/30 sticky top-0 z-50">
                 <div className="container mx-auto px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            {/* Logo in Header - Replaced Hotel icon */}
                             <div className="relative w-15 h-15">
                                 <Image
-                                    src="/logo.png"  // ← Place your logo in public/logo.png
+                                    src="/logo.png"
                                     alt="OmniHotel Pro Logo"
                                     fill
                                     className="object-contain"
@@ -363,10 +447,10 @@ export default function GuestRegistrationPage() {
                 </div>
             </header>
 
-            {/* Main Content - Width reduced from max-w-6xl to max-w-4xl */}
+            {/* Main Content */}
             <main className="container mx-auto px-4 py-8 max-w-4xl">
                 <Card className="border-0 shadow-xl bg-white">
-                    <CardHeader className="border-b border-gray-200 bg-gradient-to-r from-[#cac1b9] to-[#cac1b9]/80">
+                    <CardHeader className="border-b border-gray-200 bg-linear-to-r from-[#cac1b9] to-[#cac1b9]/80">
                         <CardTitle className="text-2xl font-bold text-black">Guest Registration Form</CardTitle>
                         <CardDescription className="text-gray-700">
                             Please complete all required fields marked with *
@@ -740,26 +824,133 @@ export default function GuestRegistrationPage() {
 
                             <div className="grid md:grid-cols-3 gap-4">
                                 <div className="space-y-2">
-                                    <Label htmlFor="dateIn" className="text-gray-700">Check-in Date *</Label>
-                                    <Input
-                                        id="dateIn"
-                                        type="date"
-                                        value={formData.dateIn}
-                                        onChange={(e) => updateForm('dateIn', e.target.value)}
-                                        className="border-gray-300 focus:border-[#cac1b9] focus:ring-[#cac1b9]"
-                                        required
-                                    />
+                                    <Label className="text-gray-700">Check-in Date *</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "w-full justify-start text-left font-normal border-gray-300",
+                                                    !formData.dateIn && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {formData.dateIn ? format(formData.dateIn, "PPP") : "Pick a date"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            {isLoadingBookedDates ? (
+                                                <div className="p-6 text-sm text-muted-foreground text-center">
+                                                    Loading availability...
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <Calendar
+                                                        mode="single"
+                                                        selected={formData.dateIn}
+                                                        onSelect={(date) => {
+                                                            if (date) {
+                                                                updateForm('dateIn', date)
+                                                                if (formData.dateOut) {
+                                                                    const checkOut = new Date(formData.dateOut);
+                                                                    checkOut.setHours(0, 0, 0, 0);
+                                                                    const checkIn = new Date(date);
+                                                                    checkIn.setHours(0, 0, 0, 0);
+                                                                    if (checkOut.getTime() <= checkIn.getTime()) {
+                                                                        updateForm('dateOut', undefined)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }}
+                                                        disabled={(date) => {
+                                                            const d = new Date(date);
+                                                            d.setHours(0, 0, 0, 0);
+                                                            const today = new Date();
+                                                            today.setHours(0, 0, 0, 0);
+                                                            return d < today || isDateBooked(d);
+                                                        }}
+                                                        modifiers={{
+                                                            booked: (date) => {
+                                                                const d = new Date(date);
+                                                                d.setHours(0, 0, 0, 0);
+                                                                const today = new Date();
+                                                                today.setHours(0, 0, 0, 0);
+                                                                return d >= today && isDateBooked(d);
+                                                            }
+                                                        }}
+                                                        modifiersClassNames={{
+                                                            booked: 'bg-red-50 text-red-400 line-through'
+                                                        }}
+                                                        initialFocus
+                                                    />
+                                                    {bookedRanges.length > 0 && (
+                                                        <div className="px-3 pb-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2">
+                                                            <span className="inline-block w-3 h-3 rounded-sm bg-red-50 border border-red-200" />
+                                                            Already booked
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="dateOut" className="text-gray-700">Check-out Date *</Label>
-                                    <Input
-                                        id="dateOut"
-                                        type="date"
-                                        value={formData.dateOut}
-                                        onChange={(e) => updateForm('dateOut', e.target.value)}
-                                        className="border-gray-300 focus:border-[#cac1b9] focus:ring-[#cac1b9]"
-                                        required
-                                    />
+                                    <Label className="text-gray-700">Check-out Date *</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "w-full justify-start text-left font-normal border-gray-300",
+                                                    !formData.dateOut && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {formData.dateOut ? format(formData.dateOut, "PPP") : "Pick a date"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            {isLoadingBookedDates ? (
+                                                <div className="p-6 text-sm text-muted-foreground text-center">
+                                                    Loading availability...
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <Calendar
+                                                        mode="single"
+                                                        selected={formData.dateOut}
+                                                        onSelect={(date) => date && updateForm('dateOut', date)}
+                                                        disabled={(date) => {
+                                                            const d = new Date(date);
+                                                            d.setHours(0, 0, 0, 0);
+                                                            const ci = formData.dateIn ? new Date(formData.dateIn) : new Date();
+                                                            ci.setHours(0, 0, 0, 0);
+                                                            return d <= ci || isDateBooked(d);
+                                                        }}
+                                                        modifiers={{
+                                                            booked: (date) => {
+                                                                const d = new Date(date);
+                                                                d.setHours(0, 0, 0, 0);
+                                                                const ci = formData.dateIn ? new Date(formData.dateIn) : new Date();
+                                                                ci.setHours(0, 0, 0, 0);
+                                                                return d >= ci && isDateBooked(d);
+                                                            }
+                                                        }}
+                                                        modifiersClassNames={{
+                                                            booked: 'bg-red-50 text-red-400 line-through'
+                                                        }}
+                                                        initialFocus
+                                                    />
+                                                    {bookedRanges.length > 0 && (
+                                                        <div className="px-3 pb-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2">
+                                                            <span className="inline-block w-3 h-3 rounded-sm bg-red-50 border border-red-200" />
+                                                            Already booked
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="roomNumber" className="text-gray-700">Room No. *</Label>
@@ -787,6 +978,24 @@ export default function GuestRegistrationPage() {
                                     </Select>
                                 </div>
                             </div>
+
+                            {/* Availability feedback */}
+                            {isLoadingBookedDates && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Loader2 className="size-3 animate-spin" /> Checking room availability...
+                                </p>
+                            )}
+                            {!isLoadingBookedDates && dateConflict && (
+                                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
+                                    <XCircle className="size-4 shrink-0" />
+                                    This room is already booked for the selected dates. Please choose different dates or a different room.
+                                </div>
+                            )}
+                            {!isLoadingBookedDates && !dateConflict && formData.dateIn && formData.dateOut && (
+                                <p className="text-xs text-green-600 flex items-center gap-1">
+                                    <Check className="size-3" /> Room is available for the selected dates
+                                </p>
+                            )}
 
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -1020,7 +1229,7 @@ export default function GuestRegistrationPage() {
                         </Button>
                         <Button
                             onClick={handleSave}
-                            disabled={isSaving || !formData.agreedToTerms}
+                            disabled={isSaving || !formData.agreedToTerms || dateConflict}
                             className="bg-[#cac1b9] text-black hover:bg-[#cac1b9]/90 font-semibold px-8"
                         >
                             {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
